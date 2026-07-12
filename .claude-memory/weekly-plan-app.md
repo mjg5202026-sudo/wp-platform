@@ -1,0 +1,42 @@
+---
+name: weekly-plan-app
+description: Daily_plan便利贴待办 — PySide6桌面应用
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 53440c1f-6a41-4c50-b399-1f8ff6741b76
+---
+
+# 便利贴待办工具 (StickyNotesTodo)
+
+**路径:** `d:\soft\python\vscode\Daily_plan`
+
+## 技术栈
+- Python 3.x + PySide6 + SQLite
+- Windows桌面应用，固定在右上角
+- 开机自启动（注册表）
+
+## 功能特性
+- 带编号的待办列表（自动重新编号）
+- 勾选完成 + 淡出动画
+- 最小化到系统托盘
+- 屏幕边缘折叠（侧边栏样式）
+- 历史记录 + 恢复功能
+- 拖拽记忆位置
+
+## 文件结构
+- `main.py` — 主入口，QApplication + 开机自启注册
+- `todo_widget.py` — 便利贴主界面UI组件
+- `database.py` — SQLite数据层（CRUD + 设置）
+- `build.py` — 打包脚本
+- `requirements.txt` — PySide6>=6.6.0, pywin32>=306
+
+## 构建
+- 运行 `python build.py` 打包为单exe
+- 生成的exe在 `dist/` 目录
+
+## 开发约定
+- 非git仓库，无版本管理
+- 数据库文件在应用目录下的本地SQLite
+- 使用winreg注册开机启动
+- 项目Skill: `/plan-build` 构建exe | `/plan-run` 运行调试

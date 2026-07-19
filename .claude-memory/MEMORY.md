@@ -3,3 +3,4 @@
 - [便利贴待办](weekly-plan-app.md) — Daily_plan PySide6桌面便利贴待办应用
 - [写作风格](user-writing-style.md) — 用户正式公文写作风格记录（持续积累）
 - [故障率分析引擎](failure-analysis-engine.md) — 作业率故障率分析算法、CLI/API使用、配置规则
+- [Document Reader Skill](document-reader-skill.md) — document-reader-skill 企业级文档解析工具

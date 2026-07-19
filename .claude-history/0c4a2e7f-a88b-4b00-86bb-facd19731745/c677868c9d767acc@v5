@@ -1,0 +1,140 @@
+# -*- coding: utf-8 -*-
+"""完整双语版 - 基于关键词匹配，确保全文翻译"""
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+import os
+
+src = r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（终）.docx'
+out = r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（双语）.docx'
+doc = Document(src)
+
+def add_trans(p, t, align, indent):
+    new_p = OxmlElement('w:p')
+    p._element.addnext(new_p)
+    pPr = OxmlElement('w:pPr'); new_p.insert(0, pPr)
+    if align:
+        jc = OxmlElement('w:jc'); jc.set(qn('w:val'), align); pPr.append(jc)
+    if indent:
+        ind = OxmlElement('w:ind'); ind.set(qn('w:firstLine'), str(indent)); pPr.append(ind)
+    sp = OxmlElement('w:spacing'); sp.set(qn('w:line'), '360'); sp.set(qn('w:lineRule'), 'auto'); pPr.append(sp)
+    r = OxmlElement('w:r'); new_p.append(r)
+    rPr = OxmlElement('w:rPr'); r.append(rPr)
+    rf = OxmlElement('w:rFonts'); rf.set(qn('w:ascii'),'Times New Roman'); rf.set(qn('w:hAnsi'),'Times New Roman'); rf.set(qn('w:eastAsia'),'仿宋_GB2312')
+    rPr.append(rf)
+    sz = OxmlElement('w:sz'); sz.set(qn('w:val'),'28'); rPr.append(sz)
+    t_elem = OxmlElement('w:t'); t_elem.set(qn('xml:space'),'preserve'); t_elem.text = t; r.append(t_elem)
+
+for i, p in enumerate(doc.paragraphs):
+    text = p.text.strip()
+    if not text or len(text) < 4:
+        continue
+    if text.startswith('表') and any(c.isdigit() for c in text[:5]):
+        continue
+    align = 'both' if p.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY else ('center' if p.alignment == WD_ALIGN_PARAGRAPH.CENTER else None)
+    indent = int(p.paragraph_format.first_line_indent.emu) if p.paragraph_format.first_line_indent else None
+    t = ''
+
+    if text == '装备能源部': t = 'Departemen Peralatan dan Energi'
+    elif text == '2026年上半年经营活动分析报告': t = 'Laporan Analisis Kegiatan Operasional Semester I Tahun 2026'
+    elif text == '2026年7月13日': t = '13 Juli 2026'
+    elif text == '前言': t = 'Pendahuluan'
+    elif '装备能源部紧紧围绕' in text: t = 'Pada Semester I 2026, Departemen Peralatan dan Energi berfokus pada target tahunan, mendorong manajemen peralatan, jaminan energi, dan manajemen material.'
+    elif '综合故障率为6.75%' in text: t = 'Tingkat kegagalan 6,75% (turun 1,75pp). Pemeliharaan terencana 30,3% (naik 11,8pp). Solar hemat 27,59%, material terbatas hemat 4,25%.'
+    elif '部分经营指标与目标要求仍有差距' in text: t = 'Masih ada kesenjangan dengan target. Pemeliharaan terencana masih rendah, suku cadang +5,17%, pasta elektroda +40,27%.'
+    elif '下半年，装备能源部将围绕年度经营目标' in text: t = 'Semester II, akan memperkuat manajemen peralatan, mendorong pemeliharaan mandiri, memastikan target tahunan tercapai.'
+    elif '一、设备运行分析' in text: t = 'I. Analisis Operasi Peralatan'
+    elif '（一）总体运行情况' in text: t = '(A) Gambaran Umum Operasi'
+    elif text == '1.冶炼部': t = '1. Divisi Smelter'
+    elif '设备可开动率均较去年同期有所提高' in text: t = 'Tingkat kesiapan operasi rata-rata 93,25%, naik 4,15pp. Lini 2# peningkatan terbesar.'
+    elif '设备故障率均较去年同期有所下降' in text: t = 'Tingkat kegagalan rata-rata 6,75%, turun 1,75pp.'
+    elif '非计划停机时间累计880小时' in text: t = 'Waktu penghentian tidak terencana 880 jam, turun 153 jam (-14,87%).'
+    elif text == '综合分析': t = 'Analisis Komprehensif'
+    elif '电炉系统运行总体平稳' in text and '故障率较去年同期明显下降' in text: t = 'Sistem tungku listrik stabil, tingkat kegagalan turun signifikan. Tungku 1# (13/56,4j), 2# (18/103,4j), 3# (25/65,7j).'
+    elif '随着1-3#生产线逐步进入大修周期' in text: t = 'Lini 1-3# memasuki siklus overhaul. Waktu pemeliharaan: 1#=104j, 2#=126j, 3#=58j.'
+    elif '原辅料干燥系统和回转窑系统' in text: t = 'Sistem pengeringan dan rotary kiln stabil, waktu operasi meningkat.'
+    elif text == '应对措施' or text == '2.应对措施': t = '2. Tindakan Penanggulangan'
+    elif '建立电极系统关键设备全周期管理机制' in text: t = 'Membangun mekanisme manajemen siklus penuh komponen kunci sistem elektroda.'
+    elif '持续推行' in text and '计划检修+停机点检' in text: t = 'Menerapkan "pemeliharaan terencana + pemeriksaan saat penghentian".'
+    elif '加强原辅料干燥及回转窑系统易损设备管理' in text: t = 'Memperkuat manajemen peralatan rentan sistem pengeringan dan rotary kiln.'
+    elif '针对立磨、制氧制氮等单一系统设备' in text: t = 'Untuk vertical mill dll, mengatur overhaul, meningkatkan pelatihan.'
+    elif text == '2.电厂部': t = '2. Divisi Power Plant'
+    elif '上半年共发生1次非计划停机' in text: t = 'Hanya 1 penghentian tidak terencana (3 hari pemadaman + 6 jam keterlambatan). Berkurang signifikan.'
+    elif '二、能源消耗' in text: t = 'II. Konsumsi Energi'
+    elif text == '（一）电厂部': t = '(A) Divisi Power Plant'
+    elif text == '1.综合分析': t = '1. Analisis Komprehensif'
+    elif '上半年发电量45,319万kwh' in text: t = 'Produksi listrik 45.319 kwh (+2,98%). Konsumsi sendiri 9,39% (-11,47%).'
+    elif '发电标煤耗397.29g/kwh' in text: t = 'Konsumsi batubara standar 397,29g/kwh (-0,01%). Pasokan 437,92g/kwh (-2,44%).'
+    elif text == '2.下一步工作' or text == '2.下一步计划': t = '2. Langkah Selanjutnya'
+    elif '根据实际负荷需求科学调配机组启停' in text: t = '(1) Mengatur start/stop unit secara ilmiah, "dua operasi satu siaga" saat beban rendah.'
+    elif '推行燃煤掺配优化方案' in text: t = '(2) Menerapkan optimalisasi pencampuran batubara.'
+    elif '定期对锅炉受热面' in text: t = '(3) Memeriksa permukaan pemanas boiler secara rutin.'
+    elif text == '（二）冶炼部': t = '(B) Divisi Smelter'
+    elif '矿热炉用电量同比增长5.69%' in text: t = 'Konsumsi listrik tungku +5,69%. Konsumsi kalsin 536,83 KWh/T (-2,16%).'
+    elif '焙砂电单耗同比降幅中部分为计量统计口径优化所致' in text: t = 'Penurunan sebagian karena optimalisasi metode pengukuran. Konsumsi per unit nikel +3,31%.'
+    elif '（1）冶炼镍铁工艺升级改造结束后' in text: t = '(1) Menyesuaikan parameter proses setelah upgrade smelter.'
+    elif '（2）结合原矿镍品位和炉渣含铁变化' in text: t = '(2) Mengoptimalkan proporsi bijih, menyesuaikan parameter proses.'
+    elif '三、物资管理' in text: t = 'III. Manajemen Material'
+    elif '（一）备品备件' in text: t = '(A) Suku Cadang'
+    elif '备品备件预算156.69万美元' in text: t = 'Anggaran suku cadang 156,69 ribu USD, realisasi 164,78 ribu USD (+5,17%).'
+    elif '冶炼部、生产保障部均完成预算控制目标' in text and '2#生产线完成大修' in text: t = 'Smelter dan Jaminan Produksi capai target. Konsumsi suku cadang terkendali.'
+    elif '（1）对冶炼镍铁工艺升级改造拆除的电机' in text: t = '(1) Pembongkaran protektif suku cadang bernilai dari upgrade smelter.'
+    elif '（2）下半年持续推进第四台挖掘机油改电改造' in text: t = '(2) Konversi ekskavator ke-4, evaluasi kendaraan lama.'
+    elif '（3）推动各部门技术改进和设备结构优化' in text: t = '(3) Mendorong perbaikan teknis dan optimalisasi peralatan.'
+    elif '（二）定额材料' in text: t = '(B) Material Kuota'
+    elif '电极糊实际单耗1,182.58' in text: t = '(1) Konsumsi pasta elektroda 1.182,58 (+40,27%). Penyebab: penurunan kadar bijih.'
+    elif '圆钢超耗48.02%' in text: t = '(2) Konsumsi baja bulat +48,02%, terkait pasta elektroda.'
+    elif '脱模剂节支11.69%' in text: t = '(3) Hemat bahan cetakan 11,69%. Hemat pipa oksigen 17,53%.'
+    elif '（1）加强电极系统全面管理' in text: t = '(1) Memperkuat manajemen sistem elektroda.'
+    elif '（2）加强炉况工艺管控' in text: t = '(2) Memperkuat kontrol proses tungku.'
+    elif '（3）对圆钢、吹氧管进行二次利用' in text: t = '(3) Menggunakan kembali baja bulat dan pipa oksigen.'
+    elif '（三）限额材料' in text: t = '(C) Material Terbatas'
+    elif '上半年限额材料预算128.22万美元' in text: t = 'Anggaran material terbatas 128,22 ribu USD, realisasi 122,77 ribu USD (-4,25%).'
+    elif '（1）规范专项项目材料管理' in text: t = '(1) Buku terpisah untuk material proyek khusus.'
+    elif '（2）结合工程车辆运行状况' in text: t = '(2) Pembaruan bertahap berdasarkan kondisi kendaraan.'
+    elif '（3）完善限额材料预算管理机制' in text: t = '(3) Menyempurnakan mekanisme anggaran.'
+    elif '（四）柴油' in text: t = '(D) Solar'
+    elif '上半年柴油预算197.36万升' in text and '节约27.59%' in text: t = 'Anggaran solar 197,36 ribu liter, realisasi 142,91 ribu liter (-27,59%).'
+    elif '冶炼部累计节约柴油45.07万升' in text: t = 'Smelter hemat 45,07 ribu liter (-75,06%).'
+    elif '电厂部柴油消耗较预算下降32.17%' in text: t = 'Power Plant hemat 32,17%.'
+    elif '生产保障部柴油消耗较预算下降5.66%' in text: t = 'Jaminan Produksi hemat 5,66%. Dua ekskavator konversi listrik.'
+    elif '营销物流部柴油消耗较预算下降9.53%' in text: t = 'Logistik hemat 9,53%. Pengurangan sewa kapal tunda.'
+    elif '（1）持续推进提质增效工作' in text: t = '(1) Mengoptimalkan kontrol pembakaran, mengurangi konsumsi solar.'
+    elif '（2）优化锅炉点火和升温工艺' in text: t = '(2) Mengoptimalkan start boiler, menyesuaikan pencampuran.'
+    elif '（3）建立单台车辆油耗台账' in text: t = '(3) Mencatat konsumsi per kendaraan, konversi ke listrik.'
+    elif '四、库存分析' in text: t = 'IV. Analisis Inventaris'
+    elif '（一）库存总体情况' in text: t = '(A) Gambaran Umum Inventaris'
+    elif '截至6月底，备品备件库存' in text: t = 'Hingga akhir Juni, suku cadang ~14,31 juta USD, material terbatas ~2,39 juta USD.'
+    elif '（二）库存压降未完成原因' in text: t = '(B) Penyebab Penurunan Belum Tercapai'
+    elif '从库存结构看，冶炼部备件库存占比约66%' in text: t = 'Suku cadang smelter ~66%. Stok smelter 946,51 ribu USD (+47,06 ribu USD dari target).'
+    elif text.startswith('1.工艺优化'): t = '1. Optimalisasi/upgrade teknis menyebabkan suku cadang khusus tidak terpakai.'
+    elif text.startswith('2.项目位于海外'): t = '2. Proyek luar negeri, siklus panjang, stok pengaman tinggi.'
+    elif text.startswith('3.疫情期间'): t = '3. Pembelian terkonsentrasi selama pandemi.'
+    elif text.startswith('4.车辆管理'): t = '4. Model kendaraan beragam, suku cadang tidak cocok.'
+    elif text.startswith('5.关键设备多为非标件'): t = '5. Peralatan non-standar, review awal tidak sempurna.'
+    elif '（三）下一步工作' in text: t = '(C) Langkah Selanjutnya'
+    elif '（1）持续推进"两金压降"' in text: t = '(1) Menyusun material menumpuk sesuai skema "penurunan dua dana".'
+    elif '（2）结合镍铁升级改造和日常检修' in text: t = '(2) Prioritaskan material inventaris untuk upgrade FeNi.'
+    elif '（3）优化库存动态管理机制' in text: t = '(3) Optimalkan manajemen dinamis, stok pengaman berdasar data historis.'
+    elif '（4）规范物资计划申报和审核流程' in text: t = '(4) Standarisasi pengajuan, hindari pembelian berulang.'
+    elif '五、外委检修' in text: t = 'V. Pemeliharaan Kontraktor'
+    elif '全面取消非必要外委检修' in text: t = 'Smelter dan Power Plant hapus pemeliharaan kontraktor, hemat ~450 ribu USD.'
+    elif '六、存在问题' in text: t = 'VI. Masalah yang Ada'
+    elif '综合故障率较去年同期有所下降，但计划维修占比仅30.3%' in text: t = '1. Tingkat kegagalan turun, tapi pemeliharaan terencana hanya 30,3%.'
+    elif '当前库存以历史积压和长期储备备件为主' in text: t = '2. Inventaris didominasi stok historis, perputaran lambat.'
+    elif '设备点检、润滑保养、状态监测等基础管理工作' in text: t = '3. Pemeriksaan peralatan belum merata, kegagalan berulang.'
+    elif '自主维修队伍仍需加强' in text: t = '4. Tim perbaikan mandiri perlu diperkuat, kehilangan teknisi.'
+    elif '七、下一步重点工作' in text: t = 'VII. Fokus Pekerjaan Semester II'
+    elif '着力提升计划维修占比' in text: t = '1. Tingkatkan pemeliharaan terencana, target kegagalan <2%.'
+    elif '建立定额动态调整机制' in text: t = '2. Mekanisme penyesuaian dinamis kuota, target pasta 0,11 t/t FeNi.'
+    elif '深入推进库存结构优化' in text: t = '3. Optimalkan struktur inventaris, stok >1 th dibersihkan.'
+    elif '巩固自主维修成果' in text: t = '4. Konsolidasi perbaikan mandiri, rencana pelatihan.'
+    elif '持续夯实设备管理基础' in text: t = '5. Perkuat fondasi manajemen peralatan, manajemen siklus hidup penuh.'
+
+    if t:
+        add_trans(p, t, align, indent)
+
+doc.save(out)
+print(f'Oke: {os.path.getsize(out)} bytes')

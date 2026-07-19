@@ -1,0 +1,12 @@
+import openpyxl
+path = r"D:\工作\项目资料\码头堆棚改造\费用结算\码头堆棚施工领料明细.xlsx"
+wb = openpyxl.load_workbook(path, data_only=True)
+ws = wb[wb.sheetnames[0]]
+
+total = 0
+for row in ws.iter_rows(min_row=4, values_only=True):
+    usd = row[8]
+    if usd and isinstance(usd, (int, float)):
+        total += usd
+print(f"Total USD: {total:.2f}")
+print(f"Total RMB: {total * 7.1:.0f}")

@@ -1,0 +1,110 @@
+import React, { useState, useEffect } from 'react'
+import { Row, Col, Card, Statistic, Table, Spin } from 'antd'
+import { WarningOutlined, ClockCircleOutlined, NumberOutlined, ApartmentOutlined } from '@ant-design/icons'
+import ReactECharts from 'echarts-for-react'
+import { getFaultSummary, getFaultTop10, getFaultTrend, getFaultBySystem } from '../api'
+
+const Dashboard = () => {
+  const [summary, setSummary] = useState(null)
+  const [top10, setTop10] = useState([])
+  const [trend, setTrend] = useState([])
+  const [bySystem, setBySystem] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    Promise.all([
+      getFaultSummary(),
+      getFaultTop10(),
+      getFaultTrend({ days: 30 }),
+      getFaultBySystem(),
+    ]).then(([s, t, tr, sys]) => {
+      setSummary(s.data.data)
+      setTop10(t.data.data)
+      setTrend(tr.data.data)
+      setBySystem(sys.data.data)
+    }).finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>
+
+  const trendOption = {
+    tooltip: { trigger: 'axis' },
+    grid: { left: 40, right: 20, bottom: 30 },
+    xAxis: { type: 'category', data: trend.map(t => t.date?.slice(5) || ''), axisLabel: { fontSize: 11 } },
+    yAxis: { type: 'value', name: '??' },
+    series: [{
+      type: 'bar', name: '????',
+      data: trend.map(t => t.total_minutes),
+      itemStyle: { color: '#1677ff' },
+    }, {
+      type: 'line', name: '??',
+      data: trend.map(t => t.count),
+      yAxisIndex: 0,
+      itemStyle: { color: '#ff4d4f' },
+    }],
+    legend: { data: ['????', '??'], top: 0 },
+  }
+
+  const systemOption = {
+    tooltip: { trigger: 'item', formatter: '{b}: {c}?? ({d}%)' },
+    series: [{
+      type: 'pie', radius: ['30%', '60%'],
+      data: bySystem.map(s => ({ name: s.system, value: s.total_minutes })),
+      label: { formatter: '{b}\n{d}%', fontSize: 11 },
+    }],
+  }
+
+  const top10Columns = [
+    { title: '????', dataIndex: 'factor', ellipsis: true },
+    { title: '??', dataIndex: 'count', width: 60 },
+    { title: '???(??)', dataIndex: 'total_minutes', width: 100 },
+    { title: '???(??)', dataIndex: 'total_hours', width: 100 },
+  ]
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <h2>????</h2>
+        <p>WP????AI?????? - 2026?</p>
+      </div>
+
+      <Row gutter={[16, 16]}>
+        <Col xs={12} sm={6}>
+          <Card><Statistic title="????" value={summary?.total_records || 0} prefix={<NumberOutlined />} /></Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card><Statistic title="?????(??)" value={summary?.total_hours || 0} prefix={<ClockCircleOutlined />} precision={1} /></Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card><Statistic title="????(??)" value={summary?.avg_minutes_per_record || 0} prefix={<WarningOutlined />} precision={1} /></Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card><Statistic title="?????" value={bySystem.length} prefix={<ApartmentOutlined />} /></Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} lg={14}>
+          <Card title="???????? (?30?)">
+            <ReactECharts option={trendOption} style={{ height: 320 }} />
+          </Card>
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card title="????">
+            <ReactECharts option={systemOption} style={{ height: 320 }} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row style={{ marginTop: 16 }}>
+        <Col span={24}>
+          <Card title="TOP10 ????">
+            <Table dataSource={top10} columns={top10Columns} rowKey="factor" size="small" pagination={false} />
+          </Card>
+        </Col>
+      </Row>
+    </div>
+  )
+}
+
+export default Dashboard

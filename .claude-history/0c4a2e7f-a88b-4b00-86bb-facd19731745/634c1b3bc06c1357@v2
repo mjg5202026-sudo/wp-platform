@@ -1,0 +1,17 @@
+# -*- coding: utf-8 -*-
+"""检查原文中未翻译的段落"""
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+src = r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（终）.docx'
+doc = Document(src)
+
+# 先列出所有需要翻译的段落
+print('=== 所有非空段落 ===')
+for i, p in enumerate(doc.paragraphs):
+    text = p.text.strip()
+    if text:
+        is_table_title = text.startswith('表')
+        is_data = any(c.isdigit() for c in text) and any(c in text for c in ['%','h','H','kwh','KWh','万','美元','升','h','T','t'])
+        is_short = len(text) < 8
+        print(f'[{i:3d}] ({"标题" if is_table_title else "数据" if is_data else "正文"}) {text[:80]}')

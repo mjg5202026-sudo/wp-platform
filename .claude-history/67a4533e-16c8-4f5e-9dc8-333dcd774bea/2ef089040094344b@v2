@@ -1,0 +1,257 @@
+import React, { useState, useEffect } from 'react'
+import {
+  Card, Row, Col, Table, Tag, Button, Modal, Form, Input, DatePicker,
+  Select, Space, message, Statistic, Popconfirm, Descriptions
+} from 'antd'
+import {
+  PlusOutlined, DeleteOutlined, CheckCircleOutlined,
+  ClockCircleOutlined, CloseCircleOutlined, FileTextOutlined
+} from '@ant-design/icons'
+import dayjs from 'dayjs'
+import {
+  getInspections, getInspectionStats, addInspectionIssue,
+  updateInspection, deleteInspection
+} from '../api'
+
+const { TextArea } = Input
+
+const severityColors = { '一般': 'blue', '严重': 'orange', '紧急': 'red' }
+const statusColors = { '未开始': 'red', '整改中': 'orange', '已完成': 'green' }
+
+const Inspections = () => {
+  const [loading, setLoading] = useState(true)
+  const [list, setList] = useState([])
+  const [total, setTotal] = useState(0)
+  const [stats, setStats] = useState(null)
+  const [page, setPage] = useState(1)
+
+  // Filters
+  const [filterStatus, setFilterStatus] = useState(null)
+  const [filterSeverity, setFilterSeverity] = useState(null)
+
+  // Modal
+  const [addModal, setAddModal] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [detailModal, setDetailModal] = useState({ open: false, record: null })
+  const [form] = Form.useForm()
+
+  const loadData = () => {
+    setLoading(true)
+    const params = { page, per_page: 50 }
+    if (filterStatus) params.status = filterStatus
+    if (filterSeverity) params.severity = filterSeverity
+
+    Promise.all([
+      getInspections(params),
+      getInspectionStats(),
+    ]).then(([l, s]) => {
+      setList(l.data.data)
+      setTotal(l.data.total)
+      setStats(s.data.data)
+    }).finally(() => setLoading(false))
+  }
+
+  useEffect(() => { loadData() }, [page, filterStatus, filterSeverity])
+
+  const handleAdd = async () => {
+    try {
+      const values = await form.validateFields()
+      setSubmitting(true)
+      const payload = {
+        ...values,
+        inspection_date: values.inspection_date?.format('YYYY-MM-DD'),
+        deadline: values.deadline?.format('YYYY-MM-DD'),
+        image_paths: [],
+      }
+      await addInspectionIssue(payload)
+      message.success('添加成功')
+      setAddModal(false)
+      form.resetFields()
+      loadData()
+    } catch (e) {
+      if (e.errorFields) return
+      message.error('添加失败: ' + (e.response?.data?.message || e.message))
+    }
+    setSubmitting(false)
+  }
+
+  const handleUpdateStatus = async (id, status) => {
+    try {
+      await updateInspection(id, { rectification_status: status })
+      message.success('状态已更新')
+      loadData()
+    } catch (e) {
+      message.error('更新失败')
+    }
+  }
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteInspection(id)
+      message.success('已删除')
+      loadData()
+    } catch (e) {
+      message.error('删除失败')
+    }
+  }
+
+  const columns = [
+    { title: '检查日期', dataIndex: 'inspection_date', width: 90 },
+    { title: '类型', dataIndex: 'inspection_type', width: 70 },
+    { title: '问题描述', dataIndex: 'issue_description', ellipsis: true },
+    { title: '位置', dataIndex: 'location', width: 80 },
+    { title: '严重程度', dataIndex: 'severity', width: 70, render: v => <Tag color={severityColors[v] || 'blue'}>{v}</Tag> },
+    { title: '整改措施', dataIndex: 'rectification_measure', ellipsis: true, width: 150 },
+    { title: '责任人', dataIndex: 'responsible_person', width: 60 },
+    {
+      title: '状态', dataIndex: 'rectification_status', width: 80,
+      render: v => <Tag color={statusColors[v] || 'default'}>{v}</Tag>,
+    },
+    { title: '是否闭环', dataIndex: 'is_closed', width: 70, render: v => v ? <Tag color="green">是</Tag> : <Tag color="red">否</Tag> },
+    {
+      title: '操作', width: 160,
+      render: (_, r) => (
+        <Space size="small">
+          <Button size="small" icon={<FileTextOutlined />} onClick={() => setDetailModal({ open: true, record: r })} />
+          {r.rectification_status === '未开始' && (
+            <Button size="small" type="primary" onClick={() => handleUpdateStatus(r.id, '整改中')}>开始整改</Button>
+          )}
+          {r.rectification_status === '整改中' && (
+            <Button size="small" type="primary" ghost onClick={() => handleUpdateStatus(r.id, '已完成')}>完成</Button>
+          )}
+          <Popconfirm title="确认删除?" onConfirm={() => handleDelete(r.id)}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <h2>专项检查</h2>
+        <p>专项检查问题管理与整改跟踪</p>
+      </div>
+
+      {/* Statistics */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        {[
+          { label: '问题总数', value: stats?.total || 0, icon: <FileTextOutlined /> },
+          { label: '已闭环', value: stats?.closed || 0, icon: <CheckCircleOutlined />, color: '#52c41a' },
+          { label: '整改中', value: stats?.rectifying || 0, icon: <ClockCircleOutlined />, color: '#faad14' },
+          { label: '超期未改', value: stats?.overdue || 0, icon: <CloseCircleOutlined />, color: '#ff4d4f' },
+          { label: '闭环率', value: stats ? stats.closed_rate + '%' : '0%', icon: <CheckCircleOutlined />, color: '#1677ff' },
+        ].map((s, i) => (
+          <Col xs={12} sm={6} md={4} key={i}>
+            <Card size="small" className="stat-card">
+              <div className="stat-label">{s.label}</div>
+              <div className="stat-value" style={{ color: s.color || '#1677ff' }}>{s.value}</div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      {/* Filter + Add */}
+      <Card style={{ marginBottom: 16 }}>
+        <Row gutter={[12, 12]} align="middle">
+          <Col>
+            <Select placeholder="整改状态" allowClear style={{ width: 130 }} value={filterStatus} onChange={v => { setFilterStatus(v); setPage(1) }}>
+              <Select.Option value="未开始">未开始</Select.Option>
+              <Select.Option value="整改中">整改中</Select.Option>
+              <Select.Option value="已完成">已完成</Select.Option>
+            </Select>
+          </Col>
+          <Col>
+            <Select placeholder="严重程度" allowClear style={{ width: 120 }} value={filterSeverity} onChange={v => { setFilterSeverity(v); setPage(1) }}>
+              <Select.Option value="一般">一般</Select.Option>
+              <Select.Option value="严重">严重</Select.Option>
+              <Select.Option value="紧急">紧急</Select.Option>
+            </Select>
+          </Col>
+          <Col flex="auto" style={{ textAlign: 'right' }}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddModal(true)}>新增问题</Button>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* Table */}
+      <Card>
+        <Table
+          dataSource={list} columns={columns} rowKey="id" size="small"
+          loading={loading} scroll={{ x: 1000 }}
+          pagination={{ current: page, total, pageSize: 50, showTotal: t => `共 ${t} 条`, onChange: p => setPage(p) }}
+        />
+      </Card>
+
+      {/* Add Modal */}
+      <Modal title="新增问题" open={addModal} onOk={handleAdd} onCancel={() => { setAddModal(false); form.resetFields() }}
+        confirmLoading={submitting} width={600}>
+        <Form form={form} layout="vertical">
+          <Form.Item name="inspection_date" label="检查日期" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="inspection_type" label="检查类型">
+            <Select>
+              <Select.Option value="日常检查">日常检查</Select.Option>
+              <Select.Option value="专项检查">专项检查</Select.Option>
+              <Select.Option value="综合检查">综合检查</Select.Option>
+              <Select.Option value="季节性检查">季节性检查</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="issue_description" label="问题描述" rules={[{ required: true, message: '请输入问题描述' }]}>
+            <TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="location" label="位置/区域">
+            <Input />
+          </Form.Item>
+          <Form.Item name="severity" label="严重程度">
+            <Select>
+              <Select.Option value="一般">一般</Select.Option>
+              <Select.Option value="严重">严重</Select.Option>
+              <Select.Option value="紧急">紧急</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="rectification_measure" label="整改措施">
+            <TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="responsible_person" label="责任人">
+            <Input />
+          </Form.Item>
+          <Form.Item name="deadline" label="整改期限">
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Detail Modal */}
+      <Modal title="问题详情" open={detailModal.open}
+        onCancel={() => setDetailModal({ open: false, record: null })}
+        footer={<Button onClick={() => setDetailModal({ open: false, record: null })}>关闭</Button>}
+      >
+        {detailModal.record && (
+          <Descriptions column={1} bordered size="small">
+            <Descriptions.Item label="检查日期">{detailModal.record.inspection_date}</Descriptions.Item>
+            <Descriptions.Item label="检查类型">{detailModal.record.inspection_type || '-'}</Descriptions.Item>
+            <Descriptions.Item label="问题描述">{detailModal.record.issue_description}</Descriptions.Item>
+            <Descriptions.Item label="位置">{detailModal.record.location || '-'}</Descriptions.Item>
+            <Descriptions.Item label="严重程度">
+              <Tag color={severityColors[detailModal.record.severity] || 'blue'}>{detailModal.record.severity}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="整改措施">{detailModal.record.rectification_measure || '-'}</Descriptions.Item>
+            <Descriptions.Item label="责任人">{detailModal.record.responsible_person || '-'}</Descriptions.Item>
+            <Descriptions.Item label="整改期限">{detailModal.record.deadline || '-'}</Descriptions.Item>
+            <Descriptions.Item label="整改状态">
+              <Tag color={statusColors[detailModal.record.rectification_status] || 'default'}>{detailModal.record.rectification_status}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="完成日期">{detailModal.record.completion_date || '-'}</Descriptions.Item>
+            <Descriptions.Item label="是否闭环">{detailModal.record.is_closed ? '是' : '否'}</Descriptions.Item>
+            <Descriptions.Item label="超期天数">{detailModal.record.overdue_days || 0}</Descriptions.Item>
+          </Descriptions>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
+export default Inspections

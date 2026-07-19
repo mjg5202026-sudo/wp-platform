@@ -1,0 +1,28 @@
+# -*- coding: utf-8 -*-
+"""
+WP装备能源AI经营管理平台 - 入口
+"""
+import os
+import sys
+
+# ???????? sys.path ?
+_root = os.path.dirname(os.path.abspath(__file__))
+if _root not in sys.path:
+    sys.path.insert(0, _root)
+
+from backend import create_app
+
+app = create_app()
+
+if __name__ == "__main__":
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 5000))
+    debug = os.environ.get("DEBUG", "True").lower() == "true"
+
+    print(f" WP平台AI经营管理系统 启动中...")
+    print(f" 地址: http://{host}:{port}")
+    print(f" API:  http://{host}:{port}/api/health")
+    print(f" 调试模式: {debug}")
+    print()
+
+    app.run(host=host, port=port, debug=debug)

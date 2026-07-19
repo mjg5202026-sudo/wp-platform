@@ -1,0 +1,37 @@
+# -*- coding: utf-8 -*-
+"""Read generated report for user review"""
+from docx import Document
+
+doc = Document('D:\\soft\\work-flow\\wp-platform\\data\\reports\\2026年5月份生产经营绩效考核意见（EPR）.docx')
+
+print("=" * 60)
+print("2026年5月份生产经营绩效考核意见（EPR）")
+print("=" * 60)
+
+# Paragraphs
+for i, p in enumerate(doc.paragraphs):
+    t = p.text.strip()
+    if not t:
+        continue
+    if len(t) < 5:
+        continue
+    # 标题
+    if any(t.startswith(x) for x in ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '（', '注']):
+        print(f"\n【{t[:30]}】")
+    elif '装备能源部' in t or '2026年' in t or len(t) > 30:
+        print(f"  {t[:200]}")
+
+# Tables
+print("\n" + "=" * 60)
+print("【表格汇总】")
+print("=" * 60)
+table_names = ["定额材料消耗", "柴油消耗", "备品备件消耗", "辅材消耗", "存货压降"]
+for ti, name in enumerate(table_names):
+    if ti < len(doc.tables):
+        t = doc.tables[ti]
+        print(f"\n表{ti}: {name} ({len(t.rows)}行)")
+        # Print header + first data row
+        for ri in [0, 1]:
+            if ri < len(t.rows):
+                cells = [c.text.strip().replace('\n', ' ')[:18] for c in t.rows[ri].cells]
+                print(f"  {' | '.join(cells)}")

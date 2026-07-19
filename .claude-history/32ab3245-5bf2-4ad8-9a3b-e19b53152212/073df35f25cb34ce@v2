@@ -1,0 +1,31 @@
+# -*- coding: utf-8 -*-
+"""Read the notice PDF and the form XLSX"""
+import pdfplumber, openpyxl, os
+
+folder = 'D:\\工作\\装备能源\\香港公司\\新建文件夹\\extracted\\20260715-金川集团股份有限公司关于加强境外企业管控的通知-金集发（2026）134号'
+
+# 1. Read PDF notice
+pdf_path = os.path.join(folder, [f for f in os.listdir(folder) if f.endswith('.pdf')][0])
+pdf = pdfplumber.open(pdf_path)
+print(f"=== 通知PDF ({len(pdf.pages)}页) ===")
+for i, page in enumerate(pdf.pages):
+    text = page.extract_text() or ""
+    print(f"\n--- 第{i+1}页 ---")
+    print(text[:2000])
+pdf.close()
+
+# 2. Read XLSX form
+xlsx_path = os.path.join(folder, [f for f in os.listdir(folder) if f.endswith('.xlsx')][0])
+wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+print(f"\n\n=== 权责清单表 ({len(wb.sheetnames)}个sheet) ===")
+for sn in wb.sheetnames:
+    ws = wb[sn]
+    print(f"\n--- {sn} ({ws.max_row}行 x {ws.max_column}列) ---")
+    for r in range(1, min(ws.max_row+1, 100)):
+        vals = []
+        for c in range(1, min(ws.max_column+1, 15)):
+            v = ws.cell(r, c).value
+            vals.append(str(v)[:40] if v is not None else '')
+        if any(v for v in vals):
+            print(f"  R{r}: {' | '.join(vals)}")
+wb.close()

@@ -1,0 +1,13 @@
+# -*- coding: utf-8 -*-
+"""Extract text from PDF."""
+from pdfminer.high_level import extract_text
+
+f = r'D:\工作\装备能源\固定资产\废铁销售\CV MENEMBUS BATAS-PENAWARAN(1).pdf'
+text = extract_text(f)
+
+out = r'C:\Users\dell\.claude\projects\d--soft-python-vscode-Daily-plan\docx_extract\CV_MENEMBUS_BATAS.txt'
+with open(out, 'w', encoding='utf-8') as f:
+    f.write(text)
+print('Extracted %d characters' % len(text))
+print('---First 2000 chars---')
+print(text[:2000])

@@ -1,0 +1,41 @@
+# -*- coding: utf-8 -*-
+import xlrd
+
+wb = xlrd.open_workbook(r'D:\soft\work-flow\wp-platform\data\templates\影响作业率因素统计 2026(4).xls')
+sh = wb.sheet_by_index(0)
+datemode = wb.datemode
+
+# Check a June record
+for r in range(1, sh.nrows):
+    v = sh.cell_value(r, 0)
+    if isinstance(v, (int, float)) and v > 40000:
+        t = xlrd.xldate_as_tuple(v, datemode)
+        if t[1] == 6 and t[2] >= 1:
+            line = str(sh.cell_value(r, 3)).strip()
+            print("line repr:", repr(line))
+            print("line hex :", line.encode('utf-8').hex())
+
+            # Expected: 3#干燥 = 33 23 E7 87 A5 E5 B9 B2
+            # But xlrd gives: 33 23 E5 B9 B2 E7 87 A5
+            # Wait, 3#干燥 in UTF-8:
+            # 3 = 0x33, # = 0x23, 干 = E5 B9 B2, 燥 = E7 87 A5
+            # So 3323e5b9b2e787a5
+            print()
+
+            # Check what we get for all lines
+            break
+
+# Get all unique lines from June data
+lines_seen = {}
+for r in range(1, sh.nrows):
+    v = sh.cell_value(r, 0)
+    if isinstance(v, (int, float)) and v > 40000:
+        t = xlrd.xldate_as_tuple(v, datemode)
+        if t[1] == 6:
+            line = str(sh.cell_value(r, 3)).strip()
+            if line not in lines_seen:
+                lines_seen[line] = line.encode('utf-8').hex()
+
+print("All unique June lines:")
+for line, hexval in sorted(lines_seen.items()):
+    print(f"  hex={hexval} repr={repr(line)}")

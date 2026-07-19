@@ -1,0 +1,306 @@
+# 故障率分析模板模块 - 设计方案
+
+## Context
+
+用户需要将手动分析脚本（analyze_june.py）升级为一个**可复用、可配置、适用于多时间维度**的故障率分析工具，同时要求：
+
+1. **多时间维度**：周报、月报、季报、半年报、年报
+2. **数据源灵活**：当前从 Excel 读取，未来从 DB 读取
+3. **逻辑固化**：已确认的算法原则（立磨公辅单独、同期检修归入立磨、突发故障归产线自身）
+4. **可迁移**：未来嵌入 wp-platform（装备能源部AI经营管理系统）时能平滑对接
+
+目标系统 `wp-platform` 已存在：
+- Flask 应用工厂 + SQLAlchemy + Blueprint 模式
+- `OperationImpactFactor` 数据模型
+- `excel_service.py` 已支持导入 Excel 到 DB
+- `report_service.py` 已有月报/周报 DOCX 生成
+- `fault_routes.py` 已有故障 TOP10/统计 API
+
+## 推荐方案：独立 analysis 包 + CLI + Flask 服务
+
+### 架构概览
+
+```
+backend/
+├── analysis/                          # 新建：分析引擎包
+│   ├── __init__.py
+│   ├── config.py                      # 配置：排除规则、关键词分类
+│   ├── loader.py                      # 数据加载器（Excel/DB 两种数据源）
+│   ├── classifier.py                  # 分类器（立磨识别、计划检修、突发故障）
+│   ├── engine.py                      # 计算引擎（核心算法）
+│   ├── formatter.py                   # 输出格式化（控制台/JSON/CSV）
+│   └── cli.py                         # CLI 入口
+├── services/
+│   └── failure_analysis_service.py    # 新增：Flask 调用的服务层（包装 analysis 包）
+├── routes/
+│   └── fault_routes.py                # 扩展现有路由（新增分析端点）
+```
+
+### 模块职责
+
+#### 1. `analysis/config.py` — 配置中心
+
+所有可调参数集中管理，方便维护和迁移：
+
+```python
+# 排除原因（col 9 影响原因/单位）
+EXCLUDE_REASONS = {
+    "production_org": "e7949fe4baa7e7bb84e7bb87",  # 生产组织
+    "planned_maintenance": "e8aea1e58892e680a7e6a380e4bfae",  # 计划性检修
+    "support_dept_prefix": "e4bf9de99a9c",  # 保障（含保障部车辆）
+    "vehicle": "e8bda6e8be86",  # 车辆
+}
+
+# 公辅系统关键词
+PUBLIC_UTILITY_KEYWORDS = {
+    "limo": "e7ab8be7a3a8",  # 立磨（可扩展：空压机、风机等）
+}
+
+# 计划性检修关键词（立磨同期归入立磨）
+PLANNED_REPAIR_KEYWORDS = [
+    "e6a380e4bfae",  # 检修
+    "e4bfaee8a3a5",  # 修补
+    "e5a484e79086",  # 处理
+    "e69bb4e68da2",  # 更换
+    "e58aa0e59bba",  # 加固
+    "e6b587e7ad91",  # 浇筑
+    "e4bf9de6b8a9",  # 保温
+    "e9858de59088",  # 配合
+    "e781ade781ab",  # 灭火
+    "e8a5a5e7848a",  # 补焊
+]
+
+# 突发故障关键词（即使发生在立磨日也不归入立磨）
+SUDDEN_FAULT_KEYWORDS = [
+    "e59c86e994a5e7a0b4",  # 圆锥破
+    "e5a0b5e6adbb",  # 堵死
+    "e5a0b5e5a19e",  # 堵塞
+    "e8b7b3e5819c",  # 跳停
+    "e69585e99a9c",  # 故障
+]
+
+# 设备类型识别（UTF-8 hex suffix）
+EQUIPMENT_PATTERNS = {
+    "dianlu": "e794b5e78289",   # 电炉
+    "ganzao": "e5b9b2e787a5",   # 干燥
+    "huiyao": "e59b9ee7aa91",   # 回窑
+}
+
+# 产线号识别（UTF-8 hex prefix）
+LINE_PATTERNS = {1: "31", 2: "32", 3: "33", 4: "34"}
+```
+
+#### 2. `analysis/loader.py` — 数据加载器
+
+支持两种数据源：
+
+- **ExcelLoader**: 直接从 `.xls` 文件读取（当前用法）
+  - 自动检测文件中的月份范围
+  - 解析所有行，过滤排除原因
+  - 返回统一格式的 `DowntimeRecord` 列表
+
+- **DBLoader**: 从 SQLAlchemy 数据库读取（未来迁移用）
+  - 查询 `OperationImpactFactor` 表
+  - 支持任意日期范围过滤
+  - 返回相同格式的记录
+
+统一数据格式：
+```python
+@dataclass
+class DowntimeRecord:
+    date: date
+    line_num: int          # 1/2/3/4
+    equipment: str         # "电炉"/"干燥"/"回窑"
+    factor: str            # 影响因素原始描述
+    reason: str            # 影响原因/单位
+    shift: str             # 班次
+    minutes: float         # 停机分钟数
+```
+
+#### 3. `analysis/classifier.py` — 分类器
+
+封装所有判断逻辑：
+
+```python
+class Classifier:
+    def is_public_utility(self, factor: str) -> bool  # 是否为公辅系统因素（含立磨）
+    def is_planned_repair(self, factor: str) -> bool   # 是否为计划性检修
+    def is_sudden_fault(self, factor: str) -> bool     # 是否为突发故障
+    def should_exclude(self, reason: str) -> bool      # 是否需要排除
+    def get_equipment(self, system: str) -> str        # 获取设备类型
+    def get_line_number(self, system: str) -> int      # 获取产线编号
+```
+
+#### 4. `analysis/engine.py` — 计算引擎
+
+核心算法实现，接收 `(records, time_period_config)` 返回计算结果：
+
+```python
+def calculate(records: list[DowntimeRecord], days: int) -> AnalysisResult:
+```
+
+算法步骤：
+1. 按 `(date, line, factor)` 分组去重叠（取每组MAX）
+2. 分类判断：
+   - 立磨事件 → 取电炉侧MAX → 归入立磨
+   - 非立磨，但在立磨日：
+     - 突发故障 → 产线自身
+     - 计划检修 → 归入立磨
+     - 其他 → 产线自身
+   - 非立磨日 → 产线自身
+3. 按线汇总，计算故障率
+4. 聚合 Top N 因素（按线别展开）
+
+```python
+@dataclass
+class AnalysisResult:
+    period_label: str                  # "2026年6月"
+    days: int                          # 计算天数
+    total_line_hours: float            # 总可用线时
+    
+    # 按线统计
+    line_results: dict[int, LineResult]  # {1: LineResult, 2: ..., 3: ...}
+    
+    # 汇总
+    total_own_minutes: float
+    total_limo_minutes: float
+    total_all_minutes: float
+    avg_own_rate: float
+    avg_comprehensive_rate: float
+    
+    # Top 因素（带线别展开）
+    top_factors: list[FactorBreakdown]
+
+@dataclass
+class LineResult:
+    line: int
+    own_minutes: float
+    limo_minutes: float
+    total_minutes: float
+    own_rate: float
+    comprehensive_rate: float
+
+@dataclass
+class FactorBreakdown:
+    factor: str
+    total_minutes: float
+    total_pct: float
+    category: str          # "公辅-立磨" / "公辅(含检修)" / "产线自身"
+    line_details: list[LineDetail]  # 按线别展开
+    
+@dataclass
+class LineDetail:
+    line: int
+    equipment: str
+    minutes: float
+```
+
+#### 5. `analysis/formatter.py` — 输出格式化
+
+多种输出格式：
+
+```python
+def format_console(result: AnalysisResult) -> str       # 终端彩色表格
+def format_json(result: AnalysisResult) -> dict         # JSON（API用）
+def format_csv(result: AnalysisResult, path: str)       # CSV导出
+def format_excel(result: AnalysisResult, path: str)     # Excel报告
+```
+
+#### 6. `analysis/cli.py` — CLI 入口
+
+```bash
+python -m backend.analysis.cli --help
+python -m backend.analysis.cli --month 6 --year 2026
+python -m backend.analysis.cli --month 6 --year 2026 --output json
+python -m backend.analysis.cli --start 2026-01-01 --end 2026-06-30  # 半年
+python -m backend.analysis.cli --year 2026 --period quarter --q 2  # 季度
+```
+
+#### 7. `services/failure_analysis_service.py` — Flask 服务层
+
+包装 analysis 包，供路由调用：
+
+```python
+def run_monthly_analysis(year, month, excel_path=None, db_session=None):
+    # 1. 加载数据（优先DB，fallback到Excel）
+    # 2. 调用 engine.calculate()
+    # 3. 返回 AnalysisResult
+```
+
+#### 8. 路由集成（扩展 `fault_routes.py`）
+
+新增端点（符合现有 API 风格）：
+
+```
+GET /api/faults/analysis/monthly?year=2026&month=6
+GET /api/faults/analysis/quarterly?year=2026&quarter=2
+GET /api/faults/analysis/yearly?year=2026
+GET /api/faults/analysis/custom?start=2026-06-01&end=2026-06-29
+```
+
+响应格式：
+```json
+{
+  "data": {
+    "period": "2026年6月",
+    "days": 29,
+    "total_line_hours": 2088,
+    "summary": {
+      "avg_own_rate": 3.31,
+      "avg_comprehensive_rate": 9.44,
+      "total_own_minutes": 4141,
+      "total_limo_minutes": 7689,
+      "total_minutes": 11830
+    },
+    "line_results": [
+      {"line": 1, "own_rate": 0.81, "comprehensive_rate": 8.10, ...},
+      {"line": 2, "own_rate": 7.67, "comprehensive_rate": 14.51, ...},
+      {"line": 3, "own_rate": 1.44, "comprehensive_rate": 5.72, ...}
+    ],
+    "top_factors": [
+      {
+        "factor": "立磨1号磨辊抢修粉煤供应不足灭火检修1级保温作业",
+        "total_minutes": 2880,
+        "category": "公辅-立磨",
+        "line_details": [
+          {"line": 1, "equipment": "电炉", "minutes": 1440},
+          {"line": 2, "equipment": "电炉", "minutes": 720},
+          {"line": 3, "equipment": "电炉", "minutes": 720}
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 多时间维度配置
+
+```python
+TIME_PERIODS = {
+    "weekly": {"label": "周报", "default_days": 7},
+    "monthly": {"label": "月报", "default_days": None},  # 自动计算当月天数
+    "quarterly": {"label": "季报", "default_days": None}, # 自动计算当季天数
+    "half_yearly": {"label": "半年报", "default_days": None},
+    "yearly": {"label": "年报", "default_days": None},
+}
+```
+
+### 实现步骤
+
+1. **创建 `analysis/` 包结构**（6 个文件）
+2. **实现 `config.py`** — 从 analyze_june.py 提取配置
+3. **实现 `classifier.py`** — 封装所有 hex 判断逻辑
+4. **实现 `loader.py`** — 从 Excel 加载并转换为 `DowntimeRecord`
+5. **实现 `engine.py`** — 核心计算逻辑（已验证的算法）
+6. **实现 `formatter.py`** — 控制台/JSON 格式化
+7. **实现 `cli.py`** — 命令行参数解析
+8. **实现 `services/failure_analysis_service.py`** — Flask 服务层
+9. **扩展 `fault_routes.py`** — 新增分析 API 端点
+10. **测试验证** — 用6月数据做端到端验证
+
+### 验证方式
+
+1. **CLI 验证**：运行 `python -m backend.analysis.cli --month 6 --year 2026`，输出应与当前 analyze_june.py 结果一致（综合故障率 9.44%）
+2. **JSON 输出验证**：`--output json` 检查数据结构完整性
+3. **API 验证**：启动 Flask 服务，调用 `/api/faults/analysis/monthly?year=2026&month=6` 确认返回格式正确
+4. **周报验证**：用6月某一周数据跑通

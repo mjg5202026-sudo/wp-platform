@@ -1,0 +1,221 @@
+const fs = require("fs");
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+        Header, Footer, AlignmentType, BorderStyle, WidthType, ShadingType,
+        PageNumber, PageBreak, LevelFormat } = require("docx");
+
+const OUT = "D:\\工作\\装备能源\\固定资产\\废铁销售\\废铁销售评审表.docx";
+
+const FONT = "宋体";
+const border = { style: BorderStyle.SINGLE, size: 1, color: "000000" };
+const borders = { top: border, bottom: border, left: border, right: border };
+const cellMargins = { top: 60, bottom: 60, left: 100, right: 100 };
+
+function tr(text, opts = {}) {
+  return new TextRun({ text, font: opts.font || FONT, size: opts.size || 21, bold: opts.bold || false });
+}
+
+function p(texts, opts = {}) {
+  const arr = Array.isArray(texts) ? texts : [tr(texts)];
+  return new Paragraph({ children: arr, alignment: opts.alignment, spacing: opts.spacing || { after: 40 }, indent: opts.indent });
+}
+
+function cell(children, opts = {}) {
+  return new TableCell({
+    borders,
+    width: opts.width ? { size: opts.width, type: WidthType.DXA } : undefined,
+    shading: opts.shading ? { fill: opts.shading, type: ShadingType.CLEAR } : undefined,
+    margins: cellMargins,
+    verticalAlign: opts.vAlign || "center",
+    children: Array.isArray(children) ? children : [p(children, { alignment: opts.alignment })],
+  });
+}
+
+function cellPara(text, opts = {}) {
+  return cell([new Paragraph({
+    children: [tr(text, { bold: opts.bold, size: opts.size || 21 })],
+    alignment: opts.alignment || AlignmentType.CENTER,
+    spacing: { after: 0 },
+  })], opts);
+}
+
+const colWidths = [800, 2400, 2000, 1600, 1600, 1500];
+const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+
+// ===== 评审评分汇总表 =====
+const headerRow1 = new TableRow({
+  tableHeader: true,
+  children: [
+    cellPara("序号", { width: colWidths[0], bold: true, shading: "D5E8F0" }),
+    cellPara("报价单位", { width: colWidths[1], bold: true, shading: "D5E8F0" }),
+    cellPara("报价（Rp/吨）", { width: colWidths[2], bold: true, shading: "D5E8F0" }),
+    cellPara("资质情况", { width: colWidths[3], bold: true, shading: "D5E8F0" }),
+    cellPara("综合得分", { width: colWidths[4], bold: true, shading: "D5E8F0" }),
+    cellPara("排名", { width: colWidths[5], bold: true, shading: "D5E8F0" }),
+  ],
+});
+
+const dataRows = [
+  ["1", "PT Menembus Batas", "Rp1.700.000", "资质齐全（Lengkap）", "", ""],
+  ["2", "CV Besi Makmur", "Rp1.500.000", "资质尚不完整（Belum Lengkap）", "", ""],
+  ["3", "PT Kafila Lintas Benua", "", "", "", ""],
+];
+
+const dataTableRows = dataRows.map((row, i) => {
+  const isLast = i === dataRows.length - 1;
+  return new TableRow({
+    children: [
+      cellPara(row[0], { width: colWidths[0] }),
+      cellPara(row[1], { width: colWidths[1], alignment: AlignmentType.LEFT }),
+      cellPara(row[2], { width: colWidths[2] }),
+      cellPara(row[3], { width: colWidths[3], alignment: AlignmentType.LEFT }),
+      cellPara(row[4], { width: colWidths[4] }),
+      cellPara(row[5], { width: colWidths[5] }),
+    ],
+  });
+});
+
+const scoreTable = new Table({
+  width: { size: totalWidth, type: WidthType.DXA },
+  columnWidths: colWidths,
+  rows: [headerRow1, ...dataTableRows],
+});
+
+// ===== 评分标准说明 =====
+const criteriaTableColWidths = [1600, 1600, 1600, 1600, 1600, 3000];
+const criteriaTotalWidth = criteriaTableColWidths.reduce((a, b) => a + b, 0);
+
+const criteriaHeader = new TableRow({
+  tableHeader: true,
+  children: [
+    cellPara("评分项目", { width: criteriaTableColWidths[0], bold: true, shading: "D5E8F0" }),
+    cellPara("报价\n（60分）", { width: criteriaTableColWidths[1], bold: true, shading: "D5E8F0" }),
+    cellPara("资质\n（15分）", { width: criteriaTableColWidths[2], bold: true, shading: "D5E8F0" }),
+    cellPara("业绩\n（10分）", { width: criteriaTableColWidths[3], bold: true, shading: "D5E8F0" }),
+    cellPara("信誉\n（5分）", { width: criteriaTableColWidths[4], bold: true, shading: "D5E8F0" }),
+    cellPara("运输方案\n（10分）", { width: criteriaTableColWidths[5], bold: true, shading: "D5E8F0" }),
+  ],
+});
+
+const criteriaRow = new TableRow({
+  children: [
+    cellPara("评分标准", { width: criteriaTableColWidths[0], bold: true }),
+    cell([p("最高价得60分，其他按比例折算", { alignment: AlignmentType.CENTER, spacing: { after: 0 } })], { width: criteriaTableColWidths[1] }),
+    cell([p("资质齐全得15分，不完整酌情扣分", { alignment: AlignmentType.CENTER, spacing: { after: 0 } })], { width: criteriaTableColWidths[2] }),
+    cell([p("有相关业绩得10分，无则0分", { alignment: AlignmentType.CENTER, spacing: { after: 0 } })], { width: criteriaTableColWidths[3] }),
+    cell([p("信誉良好得5分，有违约记录0分", { alignment: AlignmentType.CENTER, spacing: { after: 0 } })], { width: criteriaTableColWidths[4] }),
+    cell([p("方案合理可行得10分，一般得5分，不合理0分", { alignment: AlignmentType.CENTER, spacing: { after: 0 } })], { width: criteriaTableColWidths[5] }),
+  ],
+});
+
+const criteriaTable = new Table({
+  width: { size: criteriaTotalWidth, type: WidthType.DXA },
+  columnWidths: criteriaTableColWidths,
+  rows: [criteriaHeader, criteriaRow],
+});
+
+// ===== 推荐候选人名单 =====
+const recColWidths = [1200, 2400, 2400, 2400];
+const recTotalWidth = recColWidths.reduce((a, b) => a + b, 0);
+
+const recHeader = new TableRow({
+  tableHeader: true,
+  children: [
+    cellPara("排序", { width: recColWidths[0], bold: true, shading: "D5E8F0" }),
+    cellPara("推荐中标候选人名称", { width: recColWidths[1], bold: true, shading: "D5E8F0" }),
+    cellPara("报价（Rp/吨）", { width: recColWidths[2], bold: true, shading: "D5E8F0" }),
+    cellPara("备注", { width: recColWidths[3], bold: true, shading: "D5E8F0" }),
+  ],
+});
+
+const recData = [
+  ["第一名", "", "", ""],
+  ["第二名", "", "", ""],
+  ["第三名", "", "", ""],
+];
+
+const recRows = recData.map(row =>
+  new TableRow({
+    children: [
+      cellPara(row[0], { width: recColWidths[0] }),
+      cellPara(row[1], { width: recColWidths[1] }),
+      cellPara(row[2], { width: recColWidths[2] }),
+      cellPara(row[3], { width: recColWidths[3] }),
+    ],
+  })
+);
+
+const recTable = new Table({
+  width: { size: recTotalWidth, type: WidthType.DXA },
+  columnWidths: recColWidths,
+  rows: [recHeader, ...recRows],
+});
+
+// ===== 小组成员签字 =====
+const signColWidths = [3000, 3000, 3000];
+const signTotalWidth = signColWidths.reduce((a, b) => a + b, 0);
+
+const signRow = new TableRow({
+  children: [
+    cell([p("唱票人：", { spacing: { after: 0 } }), p("", { spacing: { after: 0 } })], { width: signColWidths[0] }),
+    cell([p("计票人：", { spacing: { after: 0 } }), p("", { spacing: { after: 0 } })], { width: signColWidths[1] }),
+    cell([p("监票人：", { spacing: { after: 0 } }), p("", { spacing: { after: 0 } })], { width: signColWidths[2] }),
+  ],
+});
+
+const signTable = new Table({
+  width: { size: signTotalWidth, type: WidthType.DXA },
+  columnWidths: signColWidths,
+  rows: [signRow],
+});
+
+const children = [
+  p("", { spacing: { after: 200 } }),
+  p("评审评分汇总表", { alignment: AlignmentType.CENTER, spacing: { after: 100 } }),
+  p([
+    tr("项目名称：", { bold: true }),
+    tr("印尼金川WP公司废铁销售项目"),
+  ], { spacing: { after: 100 } }),
+  p("", { spacing: { after: 60 } }),
+  scoreTable,
+  p("", { spacing: { after: 200 } }),
+
+  p("评分标准说明", { alignment: AlignmentType.CENTER, spacing: { after: 100 } }),
+  criteriaTable,
+  p("", { spacing: { after: 200 } }),
+
+  p("报价单位排序及推荐的中标候选人名单", { alignment: AlignmentType.CENTER, spacing: { after: 100 } }),
+  p([
+    tr("项目名称：", { bold: true }),
+    tr("印尼金川WP公司废铁销售项目"),
+  ], { spacing: { after: 100 } }),
+  recTable,
+  p("", { spacing: { after: 200 } }),
+  p([
+    tr("评审小组组长（签字）："),
+    tr("                    ", { size: 10 }),
+    tr("小组成员（签字）："),
+  ], { spacing: { after: 200 } }),
+  signTable,
+  p("", { spacing: { after: 100 } }),
+  p("2026年7月    日", { alignment: AlignmentType.RIGHT, spacing: { after: 200 } }),
+];
+
+const doc = new Document({
+  styles: {
+    default: { document: { run: { font: FONT, size: 21 } } },
+  },
+  sections: [{
+    properties: {
+      page: {
+        size: { width: 15840, height: 12240 },
+        margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+      },
+    },
+    children,
+  }],
+});
+
+Packer.toBuffer(doc).then(buffer => {
+  fs.writeFileSync(OUT, buffer);
+  console.log("SUCCESS: Size = " + buffer.length + " bytes");
+});

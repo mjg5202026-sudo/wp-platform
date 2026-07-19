@@ -1,0 +1,18 @@
+{
+  "name": "document-reader",
+  "description": "企业级文档解析工具 —— 读取 PDF、扫描件、图片、Word、Excel，自动判断 OCR 需求，输出结构化 Markdown 及元数据。",
+  "version": "0.1.0",
+  "triggers": [
+    "读取文档",
+    "解析PDF",
+    "识别图片文字",
+    "OCR",
+    "提取Word",
+    "读取Excel",
+    "转Markdown",
+    "文档解析"
+  ],
+  "entry": "src/main.py",
+  "language": "python",
+  "requirements_file": "requirements.txt"
+}

@@ -1,0 +1,165 @@
+# -*- coding: utf-8 -*-
+"""Fill in the authority list form"""
+import openpyxl, os
+from openpyxl.styles import Font, Alignment, Border, Side
+from copy import copy
+
+folder = 'D:\\工作\\装备能源\\香港公司\\新建文件夹\\extracted\\20260715-金川集团股份有限公司关于加强境外企业管控的通知-金集发（2026）134号'
+xlsx_path = os.path.join(folder, '20260715-附件：集团总部对境外企业管控权责清单和业务管理流程统计表.xlsx')
+wb = openpyxl.load_workbook(xlsx_path)
+ws = wb.active
+ws.title = "权责清单"
+
+# 样式
+thin = Side(style='thin')
+border = Border(left=thin, right=thin, top=thin, bottom=thin)
+wrap = Alignment(wrap_text=True, vertical='top', horizontal='left')
+wrap_c = Alignment(wrap_text=True, vertical='top', horizontal='center')
+hdr_font = Font(bold=True, size=10, name='宋体')
+body_font = Font(size=9, name='宋体')
+
+# 数据：装备能源部相关的管控事项
+items = [
+    # (序号, 职能部门, 管控事项, 事项说明, 管控具体内容, 管控具体标准和要求, 审批权责, 审核, 审批, 报备, 参考文件, 关键值/标准, 业务流程, 时限, 是否可授权)
+    (1, "装备能源部", "年度设备更新改造计划及投资预算",
+     "境外企业年度设备更新改造计划及投资预算的编制、审核、审批",
+     "境外企业编制年度设备更新改造计划及投资预算，报集团装备能源部审核，经集团审批后执行",
+     "年度设备更新改造投资总额须控制在集团批复预算范围内；单项投资超过集团规定限额的须专项报批",
+     "装备能源部/集团", "审核", "审批", "", "集团固定资产投资管理制度", "投资总额/单项限额", "境外企业编制→装备能源部审核→集团审批→纳入全面预算", "每年11月前完成下年度计划", "否"),
+
+    (2, "装备能源部", "关键生产设备（电炉、回转窑、立磨等）报废处置",
+     "境外企业主要生产设备达到报废条件须处置的审核、审批",
+     "境外企业提出设备报废申请，装备能源部组织技术鉴定，集团审批后实施",
+     "关键生产设备报废须经技术鉴定确认无修复价值；原值超过集团规定限额的须报集团董事会审议",
+     "装备能源部/集团", "审核", "审批", "", "集团固定资产管理制度", "设备原值/技术鉴定标准", "境外企业申请→装备能源部技术鉴定→集团审批→实施处置", "收到申请后15个工作日", "否"),
+
+    (3, "装备能源部", "重大设备事故调查处理",
+     "境外企业发生重大设备事故的调查、处理方案审核与审批",
+     "发生重大设备事故（主生产线非计划停机超24小时、直接经济损失较大或造成人员伤害的），境外企业须立即报告，装备能源部组织或参与调查，处理方案报集团审批",
+     "事故报告须在发生后24小时内上报集团；事故调查报告须在事故发生后7个工作日内提交",
+     "装备能源部/集团", "审核", "审批", "报备", "集团设备事故管理制度", "停机时间/经济损失额", "境外企业立即报告→装备能源部组织调查→集团审批处理方案", "24小时内上报", "否"),
+
+    (4, "装备能源部", "重大技改项目立项与实施",
+     "境外企业重大技术改造项目的可行性研究、立项、实施与验收",
+     "境外企业提出技改需求及可行性方案，装备能源部组织技术评审，集团审批后立项实施",
+     "投资额达到集团规定限额的须按招标制度执行招标程序；涉及生产工艺重大变更的须报集团技术委员会评审",
+     "装备能源部/集团", "审核", "审批", "", "集团建设项目管理制度/招标管理制度", "投资额/技术评审标准", "境外企业提出需求→装备能源部技术评审→集团审批→实施→验收", "按项目计划执行", "否"),
+
+    (5, "装备能源部", "年度备件材料采购计划",
+     "境外企业年度备件材料采购计划及预算的审核、审批",
+     "境外企业编制年度备件材料采购计划及预算，装备能源部审核后纳入集团全面预算",
+     "年度采购预算总额须控制在集团批复范围内；单项采购达到招标限额的须公开招标",
+     "装备能源部/集团", "审核", "审批", "", "集团物资管理制度/招标管理制度", "采购预算总额/招标限额", "境外企业编制→装备能源部审核→集团审批→执行", "每年11月前完成", "否"),
+
+    (6, "装备能源部", "废旧物资批量处置",
+     "境外企业批量废旧物资处置方案的审核、审批",
+     "境外企业提出废旧物资处置方案，装备能源部审核、财务部会签，集团审批后实施",
+     "处置方案须明确处置方式、估价依据、回收价值等；单项处置预计回收价值超过集团规定限额的须公开竞价",
+     "装备能源部/集团财务部", "审核", "审批", "报备", "集团废旧物资管理办法", "预计回收价值/处置方式", "境外企业提出方案→装备能源部审核→财务部会签→集团审批→实施", "收到申请后10个工作日", "否"),
+
+    (7, "装备能源部", "年度能源消耗指标制定与调整",
+     "境外企业年度能源消耗指标的制定及重大调整的审核、审批",
+     "境外企业提出年度能源消耗目标及管理方案，装备能源部审核，集团审批后纳入绩效考核",
+     "涉及政府考核的能耗指标须达到集团下达目标；指标重大调整须提供充分依据",
+     "装备能源部/集团", "审核", "审批", "报备", "集团能源管理制度", "能耗指标/政府考核目标", "境外企业提报→装备能源部审核→集团审批→纳入考核", "每年11月前完成", "否"),
+
+    (8, "装备能源部", "重大停产检修方案",
+     "境外企业涉及主生产线同时停产的计划性检修方案审批",
+     "境外企业提出停产检修计划及方案，装备能源部审核，集团分管领导审批后实施",
+     "停产检修方案须明确检修内容、工期安排、安全措施、生产影响评估等",
+     "装备能源部/集团", "审核", "审批", "", "集团设备设施检修管理制度", "停产时间/检修范围", "境外企业提出方案→装备能源部审核→集团分管领导审批→实施", "停产前15个工作日", "否"),
+
+    (9, "装备能源部", "重大设备隐患整改方案",
+     "可能导致主生产线长时间停产或安全事故的重大设备隐患整改",
+     "境外企业发现重大设备隐患须立即报告，整改方案须装备能源部审核、集团审批",
+     "隐患评估为重大的须在24小时内上报；整改完成后须经验收确认隐患消除",
+     "装备能源部/集团", "审核", "审批", "报备", "集团设备设施管理制度", "隐患等级评估标准", "境外企业发现报告→装备能源部审核方案→集团审批→实施整改→验收", "24小时内上报", "否"),
+
+    (10, "装备能源部", "修旧利废奖励方案",
+     "境外企业修旧利废奖励方案的审核、审批",
+     "境外企业提出修旧利废奖励方案（含奖励标准、总额、分配），装备能源部审核，集团审批后执行",
+     "奖励方案每半年申报一次，须附修旧利废台账及验收确认记录",
+     "装备能源部/集团", "审核", "审批", "报备", "集团修旧利废管理办法", "奖励标准/总额上限", "境外企业提报方案→装备能源部审核→集团审批→执行", "每半年申报", "是"),
+
+    (11, "装备能源部", "KPI考核指标重大调整",
+     "境外企业设备能源管理KPI考核指标的年度目标值重大调整",
+     "境外企业提出KPI考核指标调整建议，装备能源部审核，集团审批后纳入考核",
+     "涉及部门整体考核结果的指标调整须经集团总裁办公会审议",
+     "装备能源部/集团", "审核", "审批", "", "集团绩效考核管理制度", "KPI目标值/考核方式", "境外企业提报→装备能源部审核→集团审批→执行", "考核期开始前30日", "否"),
+
+    (12, "装备能源部", "重大设备采购技术标准确定",
+     "境外企业重大设备采购的技术选型、技术标准、技术协议的审核、审批",
+     "境外企业提出设备采购技术需求及技术方案，装备能源部组织技术评审，集团审批后实施采购",
+     "涉及生产工艺重大变革的设备选型须经集团技术委员会评审；涉及外方股东权益的须报董事会审议",
+     "装备能源部/集团技术委员会", "审核", "审批", "", "集团设备采购管理制度", "技术标准/选型方案", "境外企业提报→装备能源部技术评审→集团审批→采购实施", "按采购计划执行", "否"),
+]
+
+# 从第5行开始填写（保留示例行和第4行表头）
+start_row = 6
+for i, item in enumerate(items):
+    row_idx = start_row + i
+    ws.cell(row_idx, 1, item[0]).border = border
+    ws.cell(row_idx, 1).font = body_font
+    ws.cell(row_idx, 1).alignment = wrap_c
+
+    ws.cell(row_idx, 2, item[1]).border = border
+    ws.cell(row_idx, 2).font = body_font
+    ws.cell(row_idx, 2).alignment = wrap
+
+    ws.cell(row_idx, 3, item[2]).border = border
+    ws.cell(row_idx, 3).font = body_font
+    ws.cell(row_idx, 3).alignment = wrap
+
+    ws.cell(row_idx, 4, item[3]).border = border
+    ws.cell(row_idx, 4).font = body_font
+    ws.cell(row_idx, 4).alignment = wrap
+
+    ws.cell(row_idx, 5, item[4]).border = border
+    ws.cell(row_idx, 5).font = body_font
+    ws.cell(row_idx, 5).alignment = wrap
+
+    ws.cell(row_idx, 6, item[5]).border = border
+    ws.cell(row_idx, 6).font = body_font
+    ws.cell(row_idx, 6).alignment = wrap
+
+    # 审批权责 - 多列
+    ws.cell(row_idx, 7, item[6]).border = border
+    ws.cell(row_idx, 7).font = body_font
+    ws.cell(row_idx, 7).alignment = wrap
+
+    ws.cell(row_idx, 8, item[7]).border = border
+    ws.cell(row_idx, 8).font = body_font
+    ws.cell(row_idx, 8).alignment = wrap_c
+
+    ws.cell(row_idx, 9, item[8]).border = border
+    ws.cell(row_idx, 9).font = body_font
+    ws.cell(row_idx, 9).alignment = wrap_c
+
+    ws.cell(row_idx, 10, item[9]).border = border
+    ws.cell(row_idx, 10).font = body_font
+    ws.cell(row_idx, 10).alignment = wrap
+
+    ws.cell(row_idx, 11, item[10]).border = border
+    ws.cell(row_idx, 11).font = body_font
+    ws.cell(row_idx, 11).alignment = wrap
+
+    ws.cell(row_idx, 12, item[11]).border = border
+    ws.cell(row_idx, 12).font = body_font
+    ws.cell(row_idx, 12).alignment = wrap
+
+    ws.cell(row_idx, 13, item[12]).border = border
+    ws.cell(row_idx, 13).font = body_font
+    ws.cell(row_idx, 13).alignment = wrap
+
+    ws.cell(row_idx, 14, item[13]).border = border
+    ws.cell(row_idx, 14).font = body_font
+    ws.cell(row_idx, 14).alignment = wrap_c
+
+    ws.cell(row_idx, 15, item[14]).border = border
+    ws.cell(row_idx, 15).font = body_font
+    ws.cell(row_idx, 15).alignment = wrap_c
+
+# 保存
+output = 'D:\\soft\\work-flow\\wp-platform\\data\\reports\\集团总部对境外企业管控权责清单和业务管理流程统计表.xlsx'
+wb.save(output)
+print(f"OK: {output}")

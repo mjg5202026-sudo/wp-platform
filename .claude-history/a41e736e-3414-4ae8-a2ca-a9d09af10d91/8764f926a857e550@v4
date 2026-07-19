@@ -1,0 +1,222 @@
+# -*- coding: utf-8 -*-
+"""
+故障率分析引擎 - 输出格式化
+
+支持格式:
+- console: 终端表格（含中文标题）
+- json: JSON 数据结构（API用）
+"""
+
+import sys
+import io
+from .engine import AnalysisResult
+
+
+def format_console(result: AnalysisResult) -> str:
+    """格式化输出到控制台"""
+    # 确保输出UTF-8
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+    lines = []
+    _ = lines.append
+
+    _( "=" * 75)
+    _( "  %s 生产线故障率分析" % result.period_label)
+    _( "=" * 75)
+    _( "  期间: %s ~ %s | 总可用: %.0f 线·小时 | %d条运行线" % (
+        result.start_date.isoformat(), result.end_date.isoformat(),
+        result.total_line_hours, result.running_line_count))
+    _("")
+
+    # ---- 汇总表 ----
+    _("─" * 75)
+    _("  %-5s %18s %20s %14s %10s %10s" % (
+        '生产线', '自身停机', '立磨(含同期检修)', '综合停机', '自身故障率', '综合故障率'))
+    _("─" * 75)
+    for ln in sorted(result.line_results.keys()):
+        lr = result.line_results[ln]
+        _("  %d#线: %8.0fmin (%5.1fh)  %8.0fmin (%5.1fh)  %8.0fmin (%5.1fh)  %8.2f%%  %8.2f%%" % (
+            ln, lr.own_minutes, lr.own_minutes/60,
+            lr.limo_minutes, lr.limo_minutes/60,
+            lr.total_minutes, lr.total_minutes/60,
+            lr.own_rate, lr.comprehensive_rate))
+    _("─" * 75)
+    _("  %-5s %8.0fmin (%5.1fh)  %8.0fmin (%5.1fh)  %8.0fmin (%5.1fh)  %8.2f%%  %8.2f%%" % (
+        '合计', result.total_own_minutes, result.total_own_minutes/60,
+        result.total_limo_minutes, result.total_limo_minutes/60,
+        result.total_all_minutes, result.total_all_minutes/60,
+        result.avg_own_rate, result.avg_comprehensive_rate))
+    _("")
+    _("  ▲ 公辅系统(含同期检修)总影响: %.0f min (%.1f h)" % (
+        result.total_limo_minutes, result.total_limo_minutes/60))
+    _("  ▲ 产线自身平均故障率: %.2f%%" % result.avg_own_rate)
+    _("  ★ 平均综合故障率: %.2f%%" % result.avg_comprehensive_rate)
+    _("")
+    _( "=" * 75)
+    _( "  设备可靠性指标")
+    _( "=" * 75)
+    _("")
+    _( "  %-5s %10s %10s %10s %10s %10s" % (
+        '生产线', '故障次数', 'MTBF(h)', 'MTTR(h)', '可利用率', '故障频率'))
+    _("  " + "-" * 60)
+    for ln in sorted(result.line_results.keys()):
+        lr = result.line_results[ln]
+        freq = lr.fault_count / result.days if result.days > 0 else 0
+        _("  %d#线: %8d次  %8.1fh  %8.1fh  %8.2f%%  %8.2f次/日" % (
+            ln, lr.fault_count, lr.mtbf_hours, lr.mttr_hours,
+            lr.availability, freq))
+    _("  " + "-" * 60)
+    _("  %-5s %8d次  %8.1fh  %8.1fh  %8.2f%%  %8.2f次/日" % (
+        '平均', result.total_fault_count,
+        result.avg_mtbf_hours, result.avg_mttr_hours,
+        result.avg_availability,
+        result.total_fault_count / result.days / result.running_line_count
+        if result.days > 0 and result.running_line_count > 0 else 0))
+    _("")
+
+    # ---- 维修策略指标 ----
+    _("  %s" % ("─" * 50))
+    _("  维修策略指标 - 按线别")
+    _("  %s" % ("─" * 50))
+    _("  计划性检修合计: %.0f min (%.1f h)" % (
+        result.planned_maintenance_minutes, result.planned_maintenance_minutes/60))
+    for ln in sorted(result.planned_by_line.keys()):
+        pm = result.planned_by_line[ln]
+        _("    %d#线: %.0f min (%.1f h)" % (ln, pm, pm/60))
+    _("  计划维修占比: %.1f%%（含立磨停机）" % result.planned_maintenance_ratio)
+    _("  （该值越高说明维修工作越主动，越低说明应急抢修越多）")
+    _("")
+
+    # ---- 设备级可靠性展开 ----
+    _("=" * 75)
+    _("  各产线设备级可靠性明细")
+    _("=" * 75)
+    _("")
+    for ln in sorted(result.line_results.keys()):
+        lr = result.line_results[ln]
+        _("  %d#线 (综合故障率 %.2f%%)" % (ln, lr.comprehensive_rate))
+        _("  %s" % ("─" * 60))
+        _("  %-8s %8s %10s %10s %10s %10s" % (
+            '设备', '故障次数', '停机(min)', 'MTBF(h)', 'MTTR(h)', '可利用率'))
+        for er in lr.equipment_results:
+            _("  %-8s %8d次 %8.0fmin %10.1f %10.1f %8.2f%%" % (
+                er.equipment, er.fault_count, er.own_minutes,
+                er.mtbf_hours, er.mttr_hours, er.availability))
+        _("  %s" % ("─" * 60))
+        _("  计划性检修: %.0f min (%.1f h)" % (lr.planned_minutes, lr.planned_minutes/60))
+        _("")
+
+    # ---- Top 因素 ----
+    _("影响时间最长的%d项因素（按线别展开）:" % len(result.top_factors))
+    _("─" * 120)
+    _("  %3s %5s %-6s %-44s %-10s %10s %8s %7s" % (
+        '#', '线别', '设备', '因素描述', '类型', '停机(min)', '小时', '占比'))
+    _("─" * 120)
+
+    for i, fb in enumerate(result.top_factors, 1):
+        # 合计行
+        disp = fb.factor if len(fb.factor) <= 40 else fb.factor[:37] + "..."
+        _("  %3d %5s %-6s %-44s %-10s %10.0f %8.1f %6.1f%%" % (
+            i, '合计', '-', disp, fb.category,
+            fb.total_minutes, fb.total_minutes/60, fb.total_pct))
+
+        # 按线展开
+        for detail in fb.line_details:
+            _("     %5s %-6s %-44s %-10s %10.0f %8.1f %6.1f%%" % (
+                "%d#线" % detail.line, detail.equipment, '', '',
+                detail.minutes, detail.minutes/60,
+                detail.minutes / result.total_all_minutes * 100 if result.total_all_minutes > 0 else 0))
+
+    _("─" * 120)
+    t10_total = sum(fb.total_minutes for fb in result.top_factors)
+    _("  %70s %10.0f %8.1f %6.1f%%" % (
+        'TOP %d 合计' % len(result.top_factors),
+        t10_total, t10_total/60,
+        t10_total / result.total_all_minutes * 100 if result.total_all_minutes > 0 else 0))
+    _("")
+
+    return "\n".join(lines)
+
+
+def format_json(result: AnalysisResult) -> dict:
+    """格式化为 JSON 字典"""
+    return {
+        "period": result.period_label,
+        "start_date": result.start_date.isoformat(),
+        "end_date": result.end_date.isoformat(),
+        "days": result.days,
+        "running_line_count": result.running_line_count,
+        "total_line_hours": round(result.total_line_hours, 1),
+        "summary": {
+            "avg_own_rate": round(result.avg_own_rate, 2),
+            "avg_comprehensive_rate": round(result.avg_comprehensive_rate, 2),
+            "total_own_minutes": round(result.total_own_minutes, 0),
+            "total_limo_minutes": round(result.total_limo_minutes, 0),
+            "total_minutes": round(result.total_all_minutes, 0),
+        },
+        "reliability": {
+            "total_fault_count": result.total_fault_count,
+            "avg_mtbf_hours": round(result.avg_mtbf_hours, 1),
+            "avg_mttr_hours": round(result.avg_mttr_hours, 1),
+            "avg_availability": round(result.avg_availability, 2),
+            "planned_maintenance_minutes": round(result.planned_maintenance_minutes, 0),
+            "planned_maintenance_hours": round(result.planned_maintenance_minutes / 60, 1),
+            "planned_maintenance_ratio": round(result.planned_maintenance_ratio, 1),
+            "daily_fault_frequency": round(result.total_fault_count / result.days / result.running_line_count, 3) if result.days > 0 and result.running_line_count > 0 else 0,
+            "planned_by_line": {
+                str(ln): round(result.planned_by_line.get(ln, 0), 0)
+                for ln in sorted(result.planned_by_line.keys())
+            },
+        },
+        "line_results": [
+            {
+                "line": lr.line,
+                "own_minutes": round(lr.own_minutes, 0),
+                "own_hours": round(lr.own_minutes / 60, 1),
+                "limo_minutes": round(lr.limo_minutes, 0),
+                "limo_hours": round(lr.limo_minutes / 60, 1),
+                "total_minutes": round(lr.total_minutes, 0),
+                "total_hours": round(lr.total_minutes / 60, 1),
+                "own_rate": round(lr.own_rate, 2),
+                "comprehensive_rate": round(lr.comprehensive_rate, 2),
+                "fault_count": lr.fault_count,
+                "mtbf_hours": round(lr.mtbf_hours, 1),
+                "mttr_hours": round(lr.mttr_hours, 1),
+                "availability": round(lr.availability, 2),
+                "fault_frequency": round(lr.fault_count / result.days, 3) if result.days > 0 else 0,
+                "planned_minutes": round(lr.planned_minutes, 0),
+                "equipment_results": [
+                    {
+                        "equipment": er.equipment,
+                        "fault_count": er.fault_count,
+                        "own_minutes": round(er.own_minutes, 0),
+                        "mtbf_hours": round(er.mtbf_hours, 1),
+                        "mttr_hours": round(er.mttr_hours, 1),
+                        "availability": round(er.availability, 2),
+                    }
+                    for er in lr.equipment_results
+                ],
+            }
+            for lr in sorted(result.line_results.values(), key=lambda x: x.line)
+        ],
+        "top_factors": [
+            {
+                "factor": fb.factor,
+                "total_minutes": round(fb.total_minutes, 0),
+                "total_hours": round(fb.total_minutes / 60, 1),
+                "percentage": round(fb.total_pct, 1),
+                "category": fb.category,
+                "line_details": [
+                    {
+                        "line": d.line,
+                        "equipment": d.equipment,
+                        "minutes": round(d.minutes, 0),
+                        "hours": round(d.minutes / 60, 1),
+                    }
+                    for d in fb.line_details
+                ],
+            }
+            for fb in result.top_factors
+        ],
+    }

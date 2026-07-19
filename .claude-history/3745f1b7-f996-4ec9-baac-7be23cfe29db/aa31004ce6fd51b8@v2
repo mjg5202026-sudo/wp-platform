@@ -1,0 +1,185 @@
+const fs = require("fs");
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+        AlignmentType, BorderStyle, WidthType, ShadingType } = require("docx");
+
+const OUT = "D:\\工作\\装备能源\\固定资产\\废铁销售\\废铁销售评审材料.docx";
+const FONT = "宋体";
+
+function tr(text, opts = {}) {
+  return new TextRun({ text, font: opts.font || FONT, size: opts.size || 21, bold: opts.bold || false });
+}
+function p(children, opts = {}) {
+  const arr = Array.isArray(children) ? children : [tr(children)];
+  return new Paragraph({ children: arr, alignment: opts.alignment, spacing: opts.spacing || { after: 60 }, indent: opts.indent });
+}
+function empty() { return new Paragraph({ children: [tr("")], spacing: { after: 40 } }); }
+function heading(text) { return new Paragraph({ children: [tr(text, { bold: true, size: 26 })], spacing: { before: 200, after: 120 } }); }
+function subheading(text) { return new Paragraph({ children: [tr(text, { bold: true, size: 24 })], spacing: { before: 120, after: 80 } }); }
+function body(text, indent = true) { return new Paragraph({ children: [tr(text)], indent: indent ? { firstLine: 420 } : undefined, spacing: { after: 60 } }); }
+
+const border = { style: BorderStyle.SINGLE, size: 1, color: "000000" };
+const borders = { top: border, bottom: border, left: border, right: border };
+const cm = { top: 60, bottom: 60, left: 100, right: 100 };
+function cell(children, opts = {}) {
+  return new TableCell({ borders, width: opts.width ? { size: opts.width, type: WidthType.DXA } : undefined, shading: opts.shading ? { fill: opts.shading, type: ShadingType.CLEAR } : undefined, margins: cm, verticalAlign: "center", children: Array.isArray(children) ? children : [children] });
+}
+function cellP(text, opts = {}) {
+  return cell([new Paragraph({ children: [tr(text, { bold: opts.bold, size: opts.size || 20 })], alignment: opts.alignment || AlignmentType.CENTER, spacing: { after: 0 } })], opts);
+}
+
+// ===== 报价汇总表 =====
+const c1 = [600, 2400, 1800, 1800, 2200];
+const t1 = c1.reduce((a, b) => a + b, 0);
+const h1 = new TableRow({ children: [
+  cellP("序号", { width: c1[0], bold: true, shading: "D5E8F0" }),
+  cellP("报价单位", { width: c1[1], bold: true, shading: "D5E8F0" }),
+  cellP("报价（Rp/吨）", { width: c1[2], bold: true, shading: "D5E8F0" }),
+  cellP("资质情况", { width: c1[3], bold: true, shading: "D5E8F0" }),
+  cellP("备注", { width: c1[4], bold: true, shading: "D5E8F0" }),
+]});
+const d1 = [
+  ["1", "PT Menembus Batas", "Rp1.700.000", "Lengkap\n（齐全）", "含增值税，海运自理"],
+  ["2", "PT Kafila Lintas Benua", "Rp1.550.000", "Lengkap\n（齐全）", "含增值税，2024年有合作"],
+  ["3", "CV Besi Makmur", "Rp1.500.000", "Belum Lengkap\n（尚不完整）", "含增值税，海运自理"],
+];
+const r1 = d1.map(r => new TableRow({ children: r.map((v, i) => cellP(v, { width: c1[i], alignment: i === 1 || i === 3 || i === 4 ? AlignmentType.LEFT : AlignmentType.CENTER })) }));
+const t1Table = new Table({ width: { size: t1, type: WidthType.DXA }, columnWidths: c1, rows: [h1, ...r1] });
+
+// ===== 评分表 =====
+const c2 = [600, 2200, 1300, 1100, 1100, 900, 1100, 1200];
+const t2 = c2.reduce((a, b) => a + b, 0);
+const h2 = new TableRow({ children: [
+  cellP("序号", { width: c2[0], bold: true, shading: "D5E8F0" }),
+  cellP("报价单位", { width: c2[1], bold: true, shading: "D5E8F0" }),
+  cellP("报价\n（60分）", { width: c2[2], bold: true, shading: "D5E8F0" }),
+  cellP("资质\n（15分）", { width: c2[3], bold: true, shading: "D5E8F0" }),
+  cellP("业绩\n（10分）", { width: c2[4], bold: true, shading: "D5E8F0" }),
+  cellP("信誉\n（5分）", { width: c2[5], bold: true, shading: "D5E8F0" }),
+  cellP("运输方案\n（5分）", { width: c2[6], bold: true, shading: "D5E8F0" }),
+  cellP("总分\n（100分）", { width: c2[7], bold: true, shading: "D5E8F0" }),
+]});
+const scores = [
+  ["1", "PT Menembus Batas", "60", "15", "10", "5", "5", "95"],
+  ["2", "PT Kafila Lintas Benua", "55", "15", "10", "5", "5", "90"],
+  ["3", "CV Besi Makmur", "53", "5", "5", "5", "5", "73"],
+];
+const r2 = scores.map(r => new TableRow({ children: r.map((v, i) => cellP(v, { width: c2[i], alignment: i === 1 ? AlignmentType.LEFT : AlignmentType.CENTER })) }));
+const t2Table = new Table({ width: { size: t2, type: WidthType.DXA }, columnWidths: c2, rows: [h2, ...r2] });
+
+// ===== 推荐表 =====
+const c3 = [1000, 3400, 2400, 2200];
+const t3 = c3.reduce((a, b) => a + b, 0);
+const h3 = new TableRow({ children: [
+  cellP("排序", { width: c3[0], bold: true, shading: "D5E8F0" }),
+  cellP("推荐中标候选人名称", { width: c3[1], bold: true, shading: "D5E8F0" }),
+  cellP("报价（Rp/吨）", { width: c3[2], bold: true, shading: "D5E8F0" }),
+  cellP("备注", { width: c3[3], bold: true, shading: "D5E8F0" }),
+]});
+const d3 = [
+  ["第一名", "PT Menembus Batas", "Rp1.700.000", "综合得分最高"],
+  ["第二名", "PT Kafila Lintas Benua", "Rp1.550.000", "资质齐全，有合作经验"],
+  ["第三名", "CV Besi Makmur", "Rp1.500.000", "资质待补充"],
+];
+const r3 = d3.map(r => new TableRow({ children: r.map((v, i) => cellP(v, { width: c3[i], alignment: i === 1 ? AlignmentType.LEFT : AlignmentType.CENTER })) }));
+const t3Table = new Table({ width: { size: t3, type: WidthType.DXA }, columnWidths: c3, rows: [h3, ...r3] });
+
+const children = [
+  empty(),
+  p("印尼金川WP公司废铁销售项目", { alignment: AlignmentType.CENTER, spacing: { after: 40 } }),
+  p("废铁销售询价评审材料", { alignment: AlignmentType.CENTER, spacing: { after: 200 } }),
+
+  heading("一、评审背景"),
+  body("根据印尼金川WP公司废旧物资管理工作安排及废铁销售询价文件要求，我司对废铁销售项目进行公开询价。截至报价截止时间，共有3家单位提交了报价文件，分别为：PT Menembus Batas、PT Kafila Lintas Benua、CV Besi Makmur。"),
+  body("评审小组对3家报价单位进行了资格符合性审查和详细评审，现将评审情况报告如下。"),
+  empty(),
+
+  heading("二、报价单位基本情况"),
+  subheading("2.1 报价汇总"),
+  t1Table,
+  empty(),
+
+  subheading("2.2 逐家分析"),
+  body("1. PT Menembus Batas"),
+  body("报价：Rp1.700.000/吨（三家最高）。资质齐全（Lengkap），含增值税（Termasuk PPN）。陆运由WP公司承担，海运自理。该公司资质材料完整，具有废铁回收相关经营资质。"),
+  body("2. PT Kafila Lintas Benua"),
+  body("报价：Rp1.550.000/吨。资质齐全（Lengkap），含增值税（Termasuk PPN）。该公司于2024年10月曾与WP公司签订废铁销售合同（合同编号：WP PST QT-2410 013），以Rp1.000.000/吨的价格采购废钢269.72吨，合同履行情况良好，双方合作顺利。"),
+  body("3. CV Besi Makmur"),
+  body("报价：Rp1.500.000/吨。资质尚不完整（Belum Lengkap），含增值税（Termasuk PPN）。该公司此前参与报价时资质材料尚未齐全，已通知其补充相关资质文件，截至评审时仍未提交完整。"),
+  empty(),
+
+  heading("三、资格符合性审查"),
+  body("经评审小组审查："),
+  body("1. PT Menembus Batas：资质齐全，通过资格符合性审查。"),
+  body("2. PT Kafila Lintas Benua：资质齐全，通过资格符合性审查。"),
+  body("3. CV Besi Makmur：资质材料不完整，暂未通过资格符合性审查。"),
+  empty(),
+
+  heading("四、详细评审"),
+  body("本次评审采用综合评分法，总分100分，具体评分标准如下："),
+  body("（1）报价评分（60分）：以最高报价为基准价得60分，其余按比例折算。"),
+  body("（2）资质评分（15分）：资质齐全得15分，不完整酌情扣分。"),
+  body("（3）业绩评分（10分）：有相关废铁回收/销售业绩得10分，无则0分。"),
+  body("（4）信誉评分（5分）：信誉良好得5分。"),
+  body("（5）运输方案评分（5分）：方案合理可行得5分。"),
+  empty(),
+
+  subheading("4.1 评分明细"),
+  body("（1）报价评分（满分60分）："),
+  body("最高报价为PT Menembus Batas Rp1.700.000/吨，得60分。"),
+  body("PT Kafila Lintas Benua：Rp1.550.000 ÷ Rp1.700.000 × 60 ≈ 54.7分，按55分计。"),
+  body("CV Besi Makmur：Rp1.500.000 ÷ Rp1.700.000 × 60 ≈ 52.9分，按53分计。"),
+  body("（2）资质评分（满分15分）：PT Menembus Batas和PT Kafila Lintas Benua资质齐全，各得15分；CV Besi Makmur资质不完整，得5分。"),
+  body("（3）业绩评分（满分10分）：三家均具有相关经验，PT Menembus Batas和PT Kafila Lintas Benua各得10分，CV Besi Makmur得5分。"),
+  body("（4）信誉评分（满分5分）：三家均得5分。"),
+  body("（5）运输方案评分（满分5分）：三家均得5分。"),
+  empty(),
+
+  subheading("4.2 评分汇总"),
+  t2Table,
+  empty(),
+
+  heading("五、评审结论"),
+  body("经评审小组综合评审，评审结果如下："),
+  body("1. PT Menembus Batas：综合得分95分，排名第一。该单位报价最高（Rp1.700.000/吨），资质齐全，信誉良好，推荐为第一中标候选人。"),
+  body("2. PT Kafila Lintas Benua：综合得分90分，排名第二。该单位报价（Rp1.550.000/吨），资质齐全，且有良好合作历史，推荐为第二中标候选人。"),
+  body("3. CV Besi Makmur：综合得分73分，排名第三。该单位报价（Rp1.500.000/吨），但资质不完整，建议待其补充完整资质材料后重新评审。"),
+  empty(),
+
+  heading("六、推荐意见"),
+  body("推荐排序如下："),
+  empty(),
+  t3Table,
+  empty(),
+  body("建议："),
+  body("1. 推荐PT Menembus Batas为本次废铁销售项目中标单位，以Rp1.700.000/吨的单价签订销售合同，合同期限6个月或1年。"),
+  body("2. 如PT Menembus Batas因故无法签约，顺次推荐PT Kafila Lintas Benua为中标单位。"),
+  body("3. 建议跟进CV Besi Makmur的资质补充情况，待材料齐全后可作为后续备选合作单位。"),
+  body("4. 废铁销售全过程应严格执行公司废旧物资管理制度，做好物资清点、过磅计量、货款结算及全过程监督，确保处置过程公开、公平、合规。"),
+  empty(),
+  empty(),
+
+  p("评审小组组长（签字）：", { spacing: { after: 200 } }),
+  empty(), empty(),
+  p("评审小组成员（签字）：", { spacing: { after: 200 } }),
+  empty(), empty(),
+  p("2026年7月    日", { alignment: AlignmentType.RIGHT, spacing: { after: 200 } }),
+  empty(),
+
+  heading("附件："),
+  body("1. 各报价单位报价文件", false),
+  body("2. 评审评分汇总表", false),
+  body("3. 资质审查材料", false),
+];
+
+const doc = new Document({
+  styles: { default: { document: { run: { font: FONT, size: 21 } } } },
+  sections: [{
+    properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } } },
+    children,
+  }],
+});
+
+Packer.toBuffer(doc).then(buffer => {
+  fs.writeFileSync(OUT, buffer);
+  console.log("SUCCESS: " + OUT + " (" + buffer.length + " bytes)");
+});

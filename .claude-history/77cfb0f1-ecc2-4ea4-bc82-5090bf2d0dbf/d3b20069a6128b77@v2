@@ -1,0 +1,43 @@
+import openpyxl
+path = r"D:\工作\项目资料\码头堆棚改造\费用结算\码头堆棚施工领料明细(2026年4月1日更新).xlsx"
+wb = openpyxl.load_workbook(path, data_only=True)
+ws = wb[wb.sheetnames[2]]
+
+total_usd = 0
+total_idr = 0
+total_rmb = 0
+count_rmb = 0
+count_idr = 0
+count_zero = 0
+
+for row in ws.iter_rows(min_row=4, values_only=True):
+    usd_val = row[8]  # Column 9 = 折合美元 (0-indexed: 8)
+    currency = str(row[18])[:10] if row[18] else ""  # Column 19 = 币别
+
+    if usd_val and isinstance(usd_val, (int, float)):
+        total_usd += usd_val
+        if "印尼" in currency or "IDR" in currency.upper():
+            count_idr += 1
+        else:
+            count_rmb += 1
+    else:
+        count_zero += 1
+
+print(f"折合美元总计: ${total_usd:,.2f}")
+print(f"RMB计价条目: {count_rmb}")
+print(f"IDR计价条目: {count_idr}")
+print(f"金额为0条目: {count_zero}")
+print(f"总条目: {count_rmb + count_idr + count_zero}")
+
+# Also check the 增加费用 PDF - see if there's data we can extract
+# Let's also check the "材料费" section specifically
+print("\n--- Sheet 2 费用分析 材料部分 ---")
+ws2 = wb[wb.sheetnames[1]]
+# Find the material section
+in_material = False
+for row in ws2.iter_rows(min_row=1, max_row=ws2.max_row, values_only=True):
+    label = str(row[0])[:40] if row[0] else ""
+    if '二' in label or '材料' in label:
+        in_material = True
+    if in_material and row[5] and isinstance(row[5], (int, float)):
+        print(f"  {label}: {row[5]:,.2f} USD")

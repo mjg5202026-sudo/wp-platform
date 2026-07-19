@@ -1,0 +1,398 @@
+# -*- coding: utf-8 -*-
+"""月报自动生成服务 - DOCX报告生成引擎"""
+import os
+from datetime import datetime, date
+from typing import Optional
+from docx import Document
+from docx.shared import Pt, Cm
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+from backend.models import db, OperationImpactFactor, MaterialConsumption, EnergyConsumption, InspectionIssue
+from backend.models_kpi import AssessmentKpiResult
+from backend.config import REPORT_DIR
+from sqlalchemy import func
+VERSION = "1.0"
+
+
+def _set_cell_shading(cell, color_hex):
+    shading = OxmlElement('w:shd')
+    shading.set(qn('w:fill'), color_hex)
+    shading.set(qn('w:val'), 'clear')
+    cell._tc.get_or_add_tcPr().append(shading)
+
+
+def _set_cell_text(cell, text, bold=False, size=10, alignment=WD_ALIGN_PARAGRAPH.CENTER):
+    cell.text = ""
+    p = cell.paragraphs[0]
+    p.alignment = alignment
+    run = p.add_run(str(text))
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.name = "宋体"
+    run._element.rPr.rFonts.set(qn('w:eastAsia'), "宋体")
+
+
+def _add_table_header(table, headers):
+    hdr = table.rows[0]
+    for i, h in enumerate(headers):
+        _set_cell_text(hdr.cells[i], h, bold=True, size=9)
+        _set_cell_shading(hdr.cells[i], "D9E2F3")
+
+
+def _add_table_row(table, values):
+    row = table.add_row()
+    for i, v in enumerate(values):
+        _set_cell_text(row.cells[i], v, size=9)
+    return row
+
+
+def _create_table(doc, headers, data):
+    table = doc.add_table(rows=1, cols=len(headers))
+    table.style = 'Table Grid'
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    _add_table_header(table, headers)
+    for row_data in data:
+        _add_table_row(table, row_data)
+    return table
+
+
+def _add_heading(doc, text, level=1):
+    h = doc.add_heading(text, level=level)
+    for run in h.runs:
+        run.font.name = "黑体"
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), "黑体")
+
+
+def _add_para(doc, text, bold=False, size=11, indent=False, space_after=6):
+    p = doc.add_paragraph()
+    p.paragraph_format.space_after = Pt(space_after)
+    p.paragraph_format.line_spacing = Pt(22)
+    if indent:
+        p.paragraph_format.first_line_indent = Cm(0.74)
+    run = p.add_run(text)
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.name = "宋体"
+    run._element.rPr.rFonts.set(qn('w:eastAsia'), "宋体")
+    return p
+
+
+def _get_fault_summary(year, month):
+    start = date(year, month, 1)
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    records = OperationImpactFactor.query.filter(
+        OperationImpactFactor.date >= start,
+        OperationImpactFactor.date < end
+    ).all()
+    total_minutes = sum(r.impact_minutes or 0 for r in records)
+    system_stats = {}
+    for r in records:
+        sys_name = r.system or "其他"
+        if sys_name not in system_stats:
+            system_stats[sys_name] = {"count": 0, "minutes": 0}
+        system_stats[sys_name]["count"] += 1
+        system_stats[sys_name]["minutes"] += r.impact_minutes or 0
+    return {
+        "total_records": len(records),
+        "total_minutes": total_minutes,
+        "total_hours": round(total_minutes / 60, 2),
+        "systems": sorted(system_stats.items(), key=lambda x: -x[1]["minutes"]),
+    }
+
+
+def _get_kpi_summary(year, month):
+    results = AssessmentKpiResult.query.filter_by(year=year, month=month).all()
+    reward_items = [r for r in results if (r.final_reward or 0) > 0]
+    penalty_items = [r for r in results if (r.final_reward or 0) < 0]
+    total_reward = round(sum(r.final_reward or 0 for r in reward_items), 2)
+    total_penalty = round(sum(abs(r.final_reward or 0) for r in penalty_items), 2)
+    return {
+        "total": len(results),
+        "total_net": round(sum(r.final_reward or 0 for r in results), 2),
+        "total_reward": total_reward,
+        "total_penalty": total_penalty,
+        "items": results,
+    }
+
+
+def _get_inspection_summary(year, month):
+    start = date(year, month, 1)
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    records = InspectionIssue.query.filter(
+        InspectionIssue.inspection_date >= start,
+        InspectionIssue.inspection_date < end
+    ).all()
+    total = len(records)
+    closed = sum(1 for r in records if r.is_closed)
+    overdue = sum(1 for r in records if r.overdue_days and r.overdue_days > 0)
+    return {
+        "total": total, "closed": closed,
+        "closed_rate": round(closed / total * 100, 1) if total > 0 else 0,
+        "overdue": overdue,
+    }
+
+
+def _get_energy_summary(year, month):
+    start = date(year, month, 1)
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    records = EnergyConsumption.query.filter(
+        EnergyConsumption.date >= start,
+        EnergyConsumption.date < end
+    ).all()
+    by_type = {}
+    for r in records:
+        et = r.energy_type or "其他"
+        if et not in by_type:
+            by_type[et] = {"consumption": 0, "cost": 0}
+        by_type[et]["consumption"] += r.consumption or 0
+        by_type[et]["cost"] += r.total_cost or 0
+    return by_type
+
+
+def generate_monthly_report(year, month):
+    """生成装备能源部月报"""
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    fname = f"装备能源部月报_{year}年{month}月.docx"
+    fpath = os.path.join(REPORT_DIR, fname)
+    doc = Document()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(f"WP公司装备能源部{year}年{month}月份工作月报")
+    run.font.size = Pt(22)
+    run.font.bold = True
+    run.font.name = "黑体"
+    run._element.rPr.rFonts.set(qn('w:eastAsia'), "黑体")
+    _add_para(doc, f"编制日期：{date.today().isoformat()}", size=10)
+    _add_heading(doc, "一、设备运行情况", level=1)
+    fault = _get_fault_summary(year, month)
+    _add_para(doc, f"本月设备运行总体情况：共记录影响作业因素 {fault['total_records']} 项，"
+               f"累计影响时间 {fault['total_minutes']} 分钟（{fault['total_hours']} 小时）。", indent=True)
+    if fault['systems']:
+        _add_para(doc, "各系统影响情况如下：")
+        _create_table(doc,
+            ["系统名称", "故障次数", "影响时间(分钟)", "影响时间(小时)"],
+            [[s[0], str(s[1]['count']), str(s[1]['minutes']),
+              str(round(s[1]['minutes'] / 60, 2))] for s in fault['systems']])
+        doc.add_paragraph()
+    _add_heading(doc, "二、故障情况分析", level=1)
+    start = date(year, month, 1)
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    top10 = db.session.query(
+        OperationImpactFactor.impact_factor,
+        func.count(OperationImpactFactor.id).label('count'),
+        func.sum(OperationImpactFactor.impact_minutes).label('total_minutes'),
+    ).filter(
+        OperationImpactFactor.date >= start,
+        OperationImpactFactor.date < end
+    ).group_by(OperationImpactFactor.impact_factor).order_by(
+        func.sum(OperationImpactFactor.impact_minutes).desc()
+    ).limit(10).all()
+    if top10:
+        _add_para(doc, "本月TOP10故障因素：")
+        _create_table(doc,
+            ["排名", "故障因素", "次数", "影响时间(分钟)", "影响时间(小时)"],
+            [[str(i+1), r.impact_factor, str(r.count), str(r.total_minutes or 0),
+              str(round((r.total_minutes or 0)/60, 2))] for i, r in enumerate(top10)])
+        doc.add_paragraph()
+    _add_heading(doc, "三、能源消耗情况", level=1)
+    energy = _get_energy_summary(year, month)
+    if energy:
+        _create_table(doc,
+            ["能源类型", "消耗量", "费用(USD)"],
+            [[k, str(round(v['consumption'], 2)), str(round(v['cost'], 2))] for k, v in energy.items()])
+        doc.add_paragraph()
+    _add_heading(doc, "四、专项检查情况", level=1)
+    insp = _get_inspection_summary(year, month)
+    _add_para(doc, f"本月共开展专项检查 {insp['total']} 项，已闭环 {insp['closed']} 项，"
+               f"闭环率 {insp['closed_rate']}%，超期 {insp['overdue']} 项。", indent=True)
+    _add_heading(doc, "五、绩效考核情况", level=1)
+    kpi = _get_kpi_summary(year, month)
+    _add_para(doc, f"本月KPI考核共 {kpi['total']} 项，奖励合计 {kpi['total_reward']} USD，"
+               f"考核合计 {kpi['total_penalty']} USD，净{kpi['total_net']} USD。", indent=True)
+    if kpi['items']:
+        _create_table(doc,
+            ["类别", "部门", "目标值", "实际值", "超降幅", "奖罚金额"],
+            [[r.category_label or r.category, r.department or "",
+              str(r.target_value or ""), str(r.actual_value or ""),
+              f"{r.over_rate}%" if r.over_rate is not None else "/",
+              f"{'+' if (r.final_reward or 0) > 0 else ''}{r.final_reward or 0}"]
+             for r in kpi['items']])
+        doc.add_paragraph()
+    _add_heading(doc, "六、存在问题及下月计划", level=1)
+    _add_para(doc, "（一）存在问题", bold=True, size=11)
+    _add_para(doc, "1. 设备老化问题仍然突出，部分关键设备运行不稳定，需加强预知性维护。", indent=True)
+    _add_para(doc, "2. 备件材料消耗控制有待加强，部分定额材料超预算，需进一步分析原因并采取控制措施。", indent=True)
+    _add_para(doc, "3. 专项检查整改闭环率需进一步提升，超期问题需加快整改。", indent=True)
+    _add_para(doc, "（二）下月工作计划", bold=True, size=11)
+    _add_para(doc, "1. 加强设备点检和预防性维护，降低非计划停机时间，确保设备稳定运行。", indent=True)
+    _add_para(doc, "2. 持续开展提质增效工作，加强备件材料消耗管控，严控定额材料超支。", indent=True)
+    _add_para(doc, "3. 推进专项检查问题整改，确保闭环率达到95%以上。", indent=True)
+    _add_para(doc, "4. 做好月度绩效考核数据统计和报告编制，按时完成EPR考核意见。", indent=True)
+    doc.save(fpath)
+    return fpath
+
+
+def generate_weekly_admin_material(year, month, week_num):
+    """生成行政例会材料"""
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    fname = f"行政例会材料_{year}年{month}月第{week_num}周.docx"
+    fpath = os.path.join(REPORT_DIR, fname)
+    doc = Document()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(f"WP公司装备能源部{year}年{month}月第{week_num}周行政例会材料")
+    run.font.size = Pt(22)
+    run.font.bold = True
+    run.font.name = "黑体"
+    run._element.rPr.rFonts.set(qn('w:eastAsia'), "黑体")
+    _add_para(doc, f"编制日期：{date.today().isoformat()}", size=10)
+    _add_heading(doc, "一、设备运行情况", level=1)
+    fault = _get_fault_summary(year, month)
+    _add_para(doc, f"本月累计影响作业 {fault['total_records']} 项，影响时间 {fault['total_hours']} 小时。"
+               f"本周各系统运行基本正常，设备运转率保持稳定。", indent=True)
+    _add_heading(doc, "二、故障情况", level=1)
+    _add_para(doc, f"本月共发生故障 {fault['total_records']} 起，主要集中在以下系统：")
+    if fault['systems']:
+        for s in fault['systems'][:5]:
+            _add_para(doc, f"  - {s[0]}：{s[1]['count']} 次，影响 {s[1]['minutes']} 分钟")
+    _add_heading(doc, "三、检修情况", level=1)
+    _add_para(doc, "本周主要完成以下检修工作：")
+    _add_para(doc, "1. 4#电炉系统设备例行检修，更换部分易损件。", indent=True)
+    _add_para(doc, "2. 1#、2#回窑系统维护保养，检查回转窑托轮及传动装置。", indent=True)
+    _add_para(doc, "3. 各配电室设备巡检及清扫。", indent=True)
+    _add_heading(doc, "四、技改情况", level=1)
+    _add_para(doc, "4#生产线技改项目按计划推进中。")
+    _add_heading(doc, "五、存在问题", level=1)
+    _add_para(doc, "1. 部分备件采购周期较长，影响检修进度。", indent=True)
+    _add_para(doc, "2. 外委维修费用需严格控制。", indent=True)
+    _add_heading(doc, "六、下周计划", level=1)
+    _add_para(doc, "1. 继续推进4#生产线技改项目。", indent=True)
+    _add_para(doc, "2. 完成月度设备检修计划。", indent=True)
+    _add_para(doc, "3. 开展设备专项检查。", indent=True)
+    _add_para(doc, "4. 做好备件材料消耗统计及分析。", indent=True)
+    doc.save(fpath)
+    return fpath
+
+
+def generate_quality_improvement_report(year, month):
+    """生成提质增效汇报材料"""
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    fname = f"提质增效汇报_{year}年{month}月.docx"
+    fpath = os.path.join(REPORT_DIR, fname)
+    doc = Document()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(f"WP公司装备能源部{year}年{month}月提质增效汇报材料")
+    run.font.size = Pt(22)
+    run.font.bold = True
+    run.font.name = "黑体"
+    run._element.rPr.rFonts.set(qn('w:eastAsia'), "黑体")
+    _add_para(doc, f"编制日期：{date.today().isoformat()}", size=10)
+    _add_heading(doc, "一、物资压降情况", level=1)
+    start = date(year, month, 1)
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    mat_total = db.session.query(func.sum(MaterialConsumption.total_amount)).filter(
+        MaterialConsumption.date >= start,
+        MaterialConsumption.date < end
+    ).scalar() or 0
+    _add_para(doc, f"本月物资消耗总额：{round(mat_total, 2)} USD。")
+    _add_para(doc, "持续推进库存压降，减少资金占用，加强备件材料消耗管控。", indent=True)
+    _add_heading(doc, "二、外委维修费用", level=1)
+    _add_para(doc, "本月外委维修业务统计：")
+    _add_para(doc, "  - 外委次数：0 次（目标：全年原则上不发生外委维修业务）")
+    _add_para(doc, "  - 外委金额：0 USD")
+    _add_para(doc, "  - 节约金额：按计划控制，严格审批外委需求")
+    _add_heading(doc, "三、设备故障率", level=1)
+    fault = _get_fault_summary(year, month)
+    _add_para(doc, f"本月故障停机时间：{fault['total_hours']} 小时。"
+               f"故障率目标由6%降至2%，持续推进TPM和预防性维护工作。", indent=True)
+    _add_heading(doc, "四、KPI考核指标", level=1)
+    kpi = _get_kpi_summary(year, month)
+    _add_para(doc, f"本月KPI考核 {kpi['total']} 项，净奖励 {kpi['total_net']} USD。")
+    if kpi['items']:
+        _create_table(doc,
+            ["指标类别", "部门", "奖罚金额"],
+            [[r.category_label or r.category, r.department or "",
+              f"{'+' if (r.final_reward or 0) > 0 else ''}{r.final_reward or 0} USD"]
+             for r in kpi['items']])
+    doc.save(fpath)
+    return fpath
+
+
+def generate_epr_report(year, month):
+    """生成EPR绩效考核报告"""
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    fname = f"{year}年{month}月份生产经营绩效考核意见（EPR）.docx"
+    fpath = os.path.join(REPORT_DIR, fname)
+    doc = Document()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(f"{year}年{month}月份生产经营绩效考核意见")
+    run.font.size = Pt(22)
+    run.font.bold = True
+    run.font.name = "黑体"
+    run._element.rPr.rFonts.set(qn('w:eastAsia'), "黑体")
+    p2 = doc.add_paragraph()
+    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run2 = p2.add_run("（装备能源部）")
+    run2.font.size = Pt(14)
+    doc.add_paragraph()
+    kpi = _get_kpi_summary(year, month)
+    if kpi['items']:
+        for r in kpi['items']:
+            desc = r.description or f"{r.category_label or r.category}: 目标{r.target_value}, 实际{r.actual_value}"
+            p = doc.add_paragraph(style='List Paragraph')
+            run = p.add_run(desc)
+            run.font.size = Pt(10)
+        doc.add_paragraph()
+    _add_para(doc, "KPI考核汇总表：", bold=True, size=11)
+    table = doc.add_table(rows=1, cols=9)
+    table.style = 'Table Grid'
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    _add_table_header(table, ["序号", "指标", "被考核单位", "单位", "业绩目标", "实际业绩", "超幅", "奖罚金额($,+/-)", "考核频次"])
+    for i, r in enumerate(kpi['items']):
+        _add_table_row(table, [
+            str(i + 1),
+            r.category_label or r.category or "",
+            r.department or "",
+            r.unit or "/",
+            str(r.target_value) if r.target_value else "/",
+            str(r.actual_value) if r.actual_value else "/",
+            f"{r.over_rate}%" if r.over_rate is not None else "/",
+            f"{'+' if (r.final_reward or 0) > 0 else ''}{r.final_reward or 0}" if r.final_reward else "/",
+            "月度考核",
+        ])
+    doc.add_paragraph()
+    _add_para(doc, f"本月KPI考核合计：奖励 {kpi['total_reward']} USD，"
+               f"考核 {kpi['total_penalty']} USD，净合计 {kpi['total_net']} USD。", bold=True, size=11)
+    doc.save(fpath)
+    return fpath
+
+
+def get_report_list():
+    """获取已生成的报告列表"""
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    reports = []
+    for fname in sorted(os.listdir(REPORT_DIR), reverse=True):
+        fpath = os.path.join(REPORT_DIR, fname)
+        if os.path.isfile(fpath) and fname.endswith('.docx'):
+            st = os.stat(fpath)
+            reports.append({
+                "name": fname,
+                "path": fpath,
+                "size": st.st_size,
+                "size_display": f"{round(st.st_size / 1024, 1)} KB",
+                "created": datetime.fromtimestamp(st.st_ctime).isoformat(),
+                "modified": datetime.fromtimestamp(st.st_mtime).isoformat(),
+            })
+    return reports
+
+
+REPORT_GENERATORS = {
+    "monthly": {"label": "装备能源部月报", "fn": generate_monthly_report},
+    "weekly": {"label": "行政例会材料", "fn": generate_weekly_admin_material},
+    "quality": {"label": "提质增效汇报", "fn": generate_quality_improvement_report},
+    "epr": {"label": "EPR绩效考核报告", "fn": generate_epr_report},
+}

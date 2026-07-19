@@ -1,0 +1,12 @@
+import openpyxl, json, sys
+
+path = r"D:\工作\项目资料\码头堆棚改造\费用结算\码头堆棚施工领料明细(2026年4月1日更新).xlsx"
+wb = openpyxl.load_workbook(path, data_only=True)
+for name in wb.sheetnames:
+    ws = wb[name]
+    print(f"=== Sheet: {name} === (rows={ws.max_row}, cols={ws.max_column})")
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=min(ws.max_row, 60), values_only=True), 1):
+        vals = [v for v in row if v is not None]
+        if vals:
+            print(f"  {i}: {vals}")
+    print()

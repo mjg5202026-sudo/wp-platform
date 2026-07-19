@@ -1,0 +1,47 @@
+# -*- coding: utf-8 -*-
+"""Read 3 accident reports"""
+import openpyxl, os
+from docx import Document
+
+folder = 'D:\\工作\\装备能源\\设备管理\\事故故障\\上报\\6月份'
+
+# 1. 电厂部循环水泵事故
+files = [f for f in os.listdir(folder) if '循环水泵' in f]
+print("=== 电厂部循环水泵事故 ===")
+for fname in files:
+    path = os.path.join(folder, fname)
+    if fname.endswith('.xlsx'):
+        wb = openpyxl.load_workbook(path, data_only=True)
+        ws = wb.active
+        for r in range(1, 15):
+            vals = []
+            for c in range(1, 10):
+                v = ws.cell(r, c).value
+                vals.append(str(v)[:40] if v is not None else '')
+            print(f"  R{r}: {' | '.join(vals)}")
+
+# 2. 立式磨磨辊损坏（docx）
+print("\n=== 立式磨磨辊损坏 ===")
+path2 = os.path.join(folder, '冶炼部粉煤制备立式磨磨辊损坏故障分析报告（20260706）.docx')
+if os.path.exists(path2):
+    doc = Document(path2)
+    for i, p in enumerate(doc.paragraphs[:30]):
+        t = p.text.strip()
+        if t:
+            print(f"P{i}: {t[:200]}")
+
+# 3. 自卸车轮胎烧损
+print("\n=== 自卸车轮胎烧损 ===")
+files3 = [f for f in os.listdir(folder) if '轮胎' in f]
+for fname in files3:
+    path = os.path.join(folder, fname)
+    print(f"\n--- {fname} ---")
+    if fname.endswith('.xlsx'):
+        wb = openpyxl.load_workbook(path, data_only=True)
+        ws = wb.active
+        for r in range(1, 20):
+            vals = []
+            for c in range(1, 10):
+                v = ws.cell(r, c).value
+                vals.append(str(v)[:50] if v is not None else '')
+            print(f"  R{r}: {' | '.join(vals)}")

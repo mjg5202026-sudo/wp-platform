@@ -1,0 +1,18 @@
+# -*- coding: utf-8 -*-
+import sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+words = ['修补', '检修', '处理', '立磨',
+         '分闸停电修补1#电极与6-1、6-2炉盖塌陷区域',
+         '圆锥破石头堵死停料保温',
+         '停电处理6-1-2料咀外侧扇形面浇注料下沉']
+
+for w in words:
+    h = w.encode('utf-8').hex()
+    print('%s' % w)
+    print('  hex: %s' % h)
+    print('  含"检修"(e6a380e4bfae): %s' % ('e6a380e4bfae' in h))
+    print('  含"修补"(e4bfaee8a3a5): %s' % ('e4bfaee8a3a5' in h))
+    print('  含"圆锥破"(e59c86e994a5e7a0b4): %s' % ('e59c86e994a5e7a0b4' in h))
+    print('  含"立磨"(e7ab8be7a3a8): %s' % ('e7ab8be7a3a8' in h))
+    print()

@@ -1,0 +1,214 @@
+# -*- coding: utf-8 -*-
+"""
+故障率分析引擎 - 数据加载器
+
+支持两种数据源：
+1. ExcelLoader - 从 .xls 文件直接读取
+2. DBLoader - 从 SQLAlchemy 数据库读取（用于Flask集成）
+
+统一输出 DowntimeRecord 数据格式。
+"""
+
+import xlrd
+from datetime import date, datetime
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+
+@dataclass
+class DowntimeRecord:
+    """统一停机记录数据格式"""
+    date: date
+    line_num: int          # 1/2/3/4
+    equipment: str         # "电炉" / "干燥" / "回窑"
+    factor: str            # 影响因素原始描述
+    reason: str            # 影响原因/单位
+    shift: str             # 班次
+    minutes: float         # 停机分钟数（>0）
+
+
+class ExcelLoader:
+    """从 .xls 文件加载停机记录"""
+
+    # 列索引映射
+    COL_DATE = 0    # 时间
+    COL_SHIFT = 1   # 班次
+    COL_TEAM = 2    # 班组
+    COL_SYSTEM = 3  # 系统（如 1#电炉）
+    COL_FACTOR = 4  # 影响因素
+    COL_START = 5   # 开始时间
+    COL_END = 6     # 结束时间
+    COL_MINUTES = 7 # 累计时间（分钟）
+    COL_TYPE = 8    # 影响类型（内部/外部）
+    COL_REASON = 9  # 影响原因/单位
+
+    def __init__(self, file_path: str, classifier=None):
+        self.file_path = file_path
+        # 延迟导入避免循环依赖
+        if classifier:
+            self.classifier = classifier
+        else:
+            from .classifier import Classifier
+            self.classifier = classifier or Classifier()
+
+    def load_all(self) -> List[DowntimeRecord]:
+        """加载文件中所有记录（不按日期过滤）"""
+        wb = xlrd.open_workbook(self.file_path)
+        sh = wb.sheet_by_index(0)
+        datemode = wb.datemode
+        records = []
+
+        for r in range(1, sh.nrows):
+            date_val = sh.cell_value(r, self.COL_DATE)
+            if not date_val:
+                continue
+
+            # 解析日期
+            record_date = self._parse_date(date_val, datemode)
+            if record_date is None:
+                continue
+
+            # 读取各列
+            system = str(sh.cell_value(r, self.COL_SYSTEM)).strip()
+            factor = str(sh.cell_value(r, self.COL_FACTOR)).strip()
+            reason = str(sh.cell_value(r, self.COL_REASON)).strip()
+            shift = str(sh.cell_value(r, self.COL_SHIFT)).strip()
+            mins = sh.cell_value(r, self.COL_MINUTES)
+
+            # 获取设备信息
+            line_num = self.classifier.get_line_number(system)
+            equipment = self.classifier.get_equipment(system)
+
+            # 有效性和排除检查
+            if not isinstance(mins, (int, float)) or mins <= 0:
+                continue
+            if line_num == 0:
+                continue
+            if self.classifier.should_exclude(reason):
+                continue
+
+            records.append(DowntimeRecord(
+                date=record_date,
+                line_num=line_num,
+                equipment=equipment,
+                factor=factor,
+                reason=reason,
+                shift=shift,
+                minutes=float(mins),
+            ))
+
+        return records
+
+    def load_by_month(self, year: int, month: int) -> List[DowntimeRecord]:
+        """加载指定年月的记录"""
+        all_records = self.load_all()
+        return [r for r in all_records
+                if r.date.year == year and r.date.month == month]
+
+    def load_by_date_range(self, start_date: date, end_date: date) -> List[DowntimeRecord]:
+        """加载指定日期范围的记录（含首尾）"""
+        all_records = self.load_all()
+        return [r for r in all_records
+                if start_date <= r.date <= end_date]
+
+    def get_month_days(self, year: int, month: int) -> int:
+        """
+        获取某个月份的实际有效天数。
+        对于当前月份，获取到最新数据日期。
+        """
+        records = self.load_by_month(year, month)
+        if not records:
+            return 0
+        dates = set(r.date.day for r in records)
+        return max(dates)
+
+    @staticmethod
+    def _parse_date(val, datemode: int) -> Optional[date]:
+        """解析Excel日期值"""
+        if isinstance(val, (int, float)) and val > 40000:
+            t = xlrd.xldate_as_tuple(val, datemode)
+            if t[0] >= 2020:  # 合理年份
+                return date(t[0], t[1], t[2])
+        elif isinstance(val, str):
+            val = val.strip()
+            if val.startswith("20"):
+                parts = val.split(".")
+                if len(parts) == 3:
+                    try:
+                        return date(int(parts[0]), int(parts[1]), int(parts[2]))
+                    except (ValueError, IndexError):
+                        pass
+        return None
+
+
+class DBLoader:
+    """
+    从 SQLAlchemy 数据库加载停机记录（用于 Flask 集成）
+
+    用法:
+        loader = DBLoader(session=db.session)
+        records = loader.load_by_date_range(start, end)
+    """
+
+    def __init__(self, session=None, classifier=None):
+        self.session = session
+        if classifier:
+            self.classifier = classifier
+        else:
+            from .classifier import Classifier
+            self.classifier = Classifier()
+
+    def set_session(self, session):
+        """设置数据库会话"""
+        self.session = session
+
+    def load_by_date_range(self, start_date: date, end_date: date) -> List[DowntimeRecord]:
+        """从数据库加载日期范围内的记录"""
+        if not self.session:
+            raise RuntimeError("DBLoader: 未设置数据库会话，请调用 set_session()")
+
+        # 动态导入避免在非Flask环境出错
+        try:
+            from backend.models import OperationImpactFactor
+        except ImportError:
+            from models import OperationImpactFactor
+
+        query = self.session.query(OperationImpactFactor).filter(
+            OperationImpactFactor.date >= start_date,
+            OperationImpactFactor.date <= end_date,
+            OperationImpactFactor.impact_minutes > 0,
+        ).all()
+
+        records = []
+        for row in query:
+            system = row.system or ""
+            reason = row.cause_analysis or ""
+            factor = row.impact_factor or ""
+
+            line_num = self.classifier.get_line_number(system)
+            equipment = self.classifier.get_equipment(system)
+
+            if line_num == 0:
+                continue
+            if self.classifier.should_exclude(reason):
+                continue
+
+            records.append(DowntimeRecord(
+                date=row.date,
+                line_num=line_num,
+                equipment=equipment,
+                factor=factor,
+                reason=reason,
+                shift=row.shift or "",
+                minutes=float(row.impact_minutes or 0),
+            ))
+
+        return records
+
+    def load_by_month(self, year: int, month: int) -> List[DowntimeRecord]:
+        """加载指定年月的记录"""
+        import calendar
+        start_date = date(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        end_date = date(year, month, last_day)
+        return self.load_by_date_range(start_date, end_date)

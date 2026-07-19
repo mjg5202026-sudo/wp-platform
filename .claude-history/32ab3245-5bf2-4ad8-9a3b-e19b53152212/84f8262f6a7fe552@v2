@@ -1,0 +1,27 @@
+# -*- coding: utf-8 -*-
+"""Read 2026年绩效考核计算.xlsx - 定额材料相关"""
+import sys
+sys.path.insert(0, 'D:\\soft\\work-flow\\wp-platform')
+
+from backend.utils.excel_utils import load_workbook
+
+path = 'D:\\soft\\work-flow\\doc\\2026年绩效考核计算.xlsx'
+wb = load_workbook(path)
+print(f"Sheets: {wb.sheetnames}")
+
+# Look for 单耗计算表 or 定额材料 related sheets
+target_sheets = [s for s in wb.sheetnames if '单耗' in s or '定额' in s or '剔除' in s]
+print(f"Target sheets: {target_sheets}")
+
+# Read the target sheet
+sheet_name = target_sheets[0] if target_sheets else wb.sheetnames[0]
+ws = wb[sheet_name]
+print(f"\n=== {sheet_name} ({ws.max_row}行 x {ws.max_column}列) ===")
+
+# Print first 30 rows to understand structure
+for r in range(1, min(31, ws.max_row + 1)):
+    row = []
+    for c in range(1, min(ws.max_column + 1, 15)):
+        v = ws.cell(r, c).value
+        row.append(str(v)[:30] if v is not None else "")
+    print(f"  R{r}: {row}")

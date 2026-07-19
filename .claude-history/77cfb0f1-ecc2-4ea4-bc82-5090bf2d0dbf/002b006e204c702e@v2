@@ -1,0 +1,40 @@
+import openpyxl
+path = r"D:\工作\项目资料\码头堆棚改造\费用结算\码头堆棚施工领料明细.xlsx"
+wb = openpyxl.load_workbook(path, data_only=True)
+ws = wb[wb.sheetnames[0]]
+
+total_usd = 0
+count = 0
+details = []
+
+for row in ws.iter_rows(min_row=4, values_only=True):
+    usd = row[8]  # Column 9 - 折合美元
+    name = str(row[2])[:20] if row[2] else ""  # Column 3 - 材料名称
+    qty = row[5] if row[5] else 0
+    unit = str(row[3])[:10] if row[3] else ""
+    amt = row[7] if row[7] else 0
+
+    if usd and isinstance(usd, (int, float)):
+        total_usd += usd
+        count += 1
+
+print(f"领料明细总行数: {ws.max_row - 3}")
+print(f"有金额的行数: {count}")
+print(f"折合美元总计: ${total_usd:,.2f}")
+print(f"折合人民币约: ¥{total_usd * 7.1:,.0f} (按汇率7.1)")
+
+# Show top items by USD value
+print("\n前20大金额材料:")
+items = []
+for row in ws.iter_rows(min_row=4, values_only=True):
+    usd = row[8]
+    name = str(row[2])[:30] if row[2] else ""
+    qty = row[5] if row[5] else 0
+    unit = str(row[3])[:10] if row[3] else ""
+    amt = row[7] if row[7] else 0
+    if usd and isinstance(usd, (int, float)) and usd > 0:
+        items.append((usd, name, qty, unit, amt))
+
+items.sort(key=lambda x: -x[0])
+for i, (usd, name, qty, unit, amt) in enumerate(items[:20], 1):
+    print(f"  {i:2d}. {name:20s} x{qty:>8} {unit:6s} 金额={amt:>10}  USD=${usd:>8.2f}")

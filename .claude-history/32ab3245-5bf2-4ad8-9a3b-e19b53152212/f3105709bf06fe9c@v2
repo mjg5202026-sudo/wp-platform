@@ -1,0 +1,29 @@
+# -*- coding: utf-8 -*-
+"""Read 3 docx accident reports"""
+from docx import Document
+import os
+
+folder = 'D:\\工作\\装备能源\\设备管理\\事故故障\\上报\\6月份'
+
+files = [
+    '电厂部6月04日1#机组A循环水泵过电压保护装置烧损事故(1).docx',
+    '冶炼部粉煤制备立式磨磨辊损坏事故分析报告（20260707）.docx',
+    '生产保障部6月11日22#自卸车轮胎烧损事故分析报告（2026.6.11）(2).docx',
+]
+
+for fname in files:
+    path = os.path.join(folder, fname)
+    print(f"\n{'='*60}")
+    print(f"=== {fname} ===")
+    print(f"{'='*60}")
+    doc = Document(path)
+    for i, p in enumerate(doc.paragraphs):
+        t = p.text.strip()
+        if t:
+            print(f"P{i}: {t[:200]}")
+    # Check tables
+    for ti, table in enumerate(doc.tables):
+        print(f"\n  表格{ti}: {len(table.rows)}行")
+        for ri, row in enumerate(table.rows[:8]):
+            cells = [c.text.strip()[:35] for c in row.cells]
+            print(f"    R{ri}: {cells}")

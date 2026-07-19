@@ -1,0 +1,257 @@
+import React, { useState, useEffect } from 'react'
+import {
+  Card, Row, Col, Table, Tag, Button, Modal, Form, Input, DatePicker,
+  Select, Space, message, Statistic, Popconfirm, Descriptions
+} from 'antd'
+import {
+  PlusOutlined, DeleteOutlined, CheckCircleOutlined,
+  ClockCircleOutlined, CloseCircleOutlined, FileTextOutlined
+} from '@ant-design/icons'
+import dayjs from 'dayjs'
+import {
+  getInspections, getInspectionStats, addInspectionIssue,
+  updateInspection, deleteInspection
+} from '../api'
+
+const { TextArea } = Input
+
+const severityColors = { '??': 'blue', '??': 'orange', '??': 'red' }
+const statusColors = { '???': 'red', '???': 'orange', '???': 'green' }
+
+const Inspections = () => {
+  const [loading, setLoading] = useState(true)
+  const [list, setList] = useState([])
+  const [total, setTotal] = useState(0)
+  const [stats, setStats] = useState(null)
+  const [page, setPage] = useState(1)
+
+  // Filters
+  const [filterStatus, setFilterStatus] = useState(null)
+  const [filterSeverity, setFilterSeverity] = useState(null)
+
+  // Modal
+  const [addModal, setAddModal] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [detailModal, setDetailModal] = useState({ open: false, record: null })
+  const [form] = Form.useForm()
+
+  const loadData = () => {
+    setLoading(true)
+    const params = { page, per_page: 50 }
+    if (filterStatus) params.status = filterStatus
+    if (filterSeverity) params.severity = filterSeverity
+
+    Promise.all([
+      getInspections(params),
+      getInspectionStats(),
+    ]).then(([l, s]) => {
+      setList(l.data.data)
+      setTotal(l.data.total)
+      setStats(s.data.data)
+    }).finally(() => setLoading(false))
+  }
+
+  useEffect(() => { loadData() }, [page, filterStatus, filterSeverity])
+
+  const handleAdd = async () => {
+    try {
+      const values = await form.validateFields()
+      setSubmitting(true)
+      const payload = {
+        ...values,
+        inspection_date: values.inspection_date?.format('YYYY-MM-DD'),
+        deadline: values.deadline?.format('YYYY-MM-DD'),
+        image_paths: [],
+      }
+      await addInspectionIssue(payload)
+      message.success('????')
+      setAddModal(false)
+      form.resetFields()
+      loadData()
+    } catch (e) {
+      if (e.errorFields) return
+      message.error('????: ' + (e.response?.data?.message || e.message))
+    }
+    setSubmitting(false)
+  }
+
+  const handleUpdateStatus = async (id, status) => {
+    try {
+      await updateInspection(id, { rectification_status: status })
+      message.success('??????')
+      loadData()
+    } catch (e) {
+      message.error('????')
+    }
+  }
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteInspection(id)
+      message.success('????')
+      loadData()
+    } catch (e) {
+      message.error('????')
+    }
+  }
+
+  const columns = [
+    { title: '????', dataIndex: 'inspection_date', width: 90 },
+    { title: '??', dataIndex: 'inspection_type', width: 70 },
+    { title: '????', dataIndex: 'issue_description', ellipsis: true },
+    { title: '??', dataIndex: 'location', width: 80 },
+    { title: '????', dataIndex: 'severity', width: 70, render: v => <Tag color={severityColors[v] || 'blue'}>{v}</Tag> },
+    { title: '????', dataIndex: 'rectification_measure', ellipsis: true, width: 150 },
+    { title: '???', dataIndex: 'responsible_person', width: 60 },
+    {
+      title: '??', dataIndex: 'rectification_status', width: 80,
+      render: v => <Tag color={statusColors[v] || 'default'}>{v}</Tag>,
+    },
+    { title: '????', dataIndex: 'is_closed', width: 70, render: v => v ? <Tag color="green">?</Tag> : <Tag color="red">?</Tag> },
+    {
+      title: '??', width: 160,
+      render: (_, r) => (
+        <Space size="small">
+          <Button size="small" icon={<FileTextOutlined />} onClick={() => setDetailModal({ open: true, record: r })} />
+          {r.rectification_status === '???' && (
+            <Button size="small" type="primary" onClick={() => handleUpdateStatus(r.id, '???')}>???</Button>
+          )}
+          {r.rectification_status === '???' && (
+            <Button size="small" type="primary" ghost onClick={() => handleUpdateStatus(r.id, '???')}>??</Button>
+          )}
+          <Popconfirm title="?????" onConfirm={() => handleDelete(r.id)}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <h2>????</h2>
+        <p>???????????????</p>
+      </div>
+
+      {/* Statistics */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        {[
+          { label: '????', value: stats?.total || 0, icon: <FileTextOutlined /> },
+          { label: '???', value: stats?.closed || 0, icon: <CheckCircleOutlined />, color: '#52c41a' },
+          { label: '???', value: stats?.rectifying || 0, icon: <ClockCircleOutlined />, color: '#faad14' },
+          { label: '????', value: stats?.overdue || 0, icon: <CloseCircleOutlined />, color: '#ff4d4f' },
+          { label: '???', value: stats ? stats.closed_rate + '%' : '0%', icon: <CheckCircleOutlined />, color: '#1677ff' },
+        ].map((s, i) => (
+          <Col xs={12} sm={6} md={4} key={i}>
+            <Card size="small" className="stat-card">
+              <div className="stat-label">{s.label}</div>
+              <div className="stat-value" style={{ color: s.color || '#1677ff' }}>{s.value}</div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      {/* Filter + Add */}
+      <Card style={{ marginBottom: 16 }}>
+        <Row gutter={[12, 12]} align="middle">
+          <Col>
+            <Select placeholder="????" allowClear style={{ width: 130 }} value={filterStatus} onChange={v => { setFilterStatus(v); setPage(1) }}>
+              <Select.Option value="???">???</Select.Option>
+              <Select.Option value="???">???</Select.Option>
+              <Select.Option value="???">???</Select.Option>
+            </Select>
+          </Col>
+          <Col>
+            <Select placeholder="????" allowClear style={{ width: 120 }} value={filterSeverity} onChange={v => { setFilterSeverity(v); setPage(1) }}>
+              <Select.Option value="??">??</Select.Option>
+              <Select.Option value="??">??</Select.Option>
+              <Select.Option value="??">??</Select.Option>
+            </Select>
+          </Col>
+          <Col flex="auto" style={{ textAlign: 'right' }}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddModal(true)}>????</Button>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* Table */}
+      <Card>
+        <Table
+          dataSource={list} columns={columns} rowKey="id" size="small"
+          loading={loading} scroll={{ x: 1000 }}
+          pagination={{ current: page, total, pageSize: 50, showTotal: t => `? ${t} ?`, onChange: p => setPage(p) }}
+        />
+      </Card>
+
+      {/* Add Modal */}
+      <Modal title="??????" open={addModal} onOk={handleAdd} onCancel={() => { setAddModal(false); form.resetFields() }}
+        confirmLoading={submitting} width={600}>
+        <Form form={form} layout="vertical">
+          <Form.Item name="inspection_date" label="????" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="inspection_type" label="????">
+            <Select>
+              <Select.Option value="????">????</Select.Option>
+              <Select.Option value="????">????</Select.Option>
+              <Select.Option value="????">????</Select.Option>
+              <Select.Option value="????">????</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="issue_description" label="????" rules={[{ required: true, message: '???????' }]}>
+            <TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="location" label="??/??">
+            <Input />
+          </Form.Item>
+          <Form.Item name="severity" label="????">
+            <Select>
+              <Select.Option value="??">??</Select.Option>
+              <Select.Option value="??">??</Select.Option>
+              <Select.Option value="??">??</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="rectification_measure" label="????">
+            <TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="responsible_person" label="???">
+            <Input />
+          </Form.Item>
+          <Form.Item name="deadline" label="????">
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Detail Modal */}
+      <Modal title="????" open={detailModal.open}
+        onCancel={() => setDetailModal({ open: false, record: null })}
+        footer={<Button onClick={() => setDetailModal({ open: false, record: null })}>??</Button>}
+      >
+        {detailModal.record && (
+          <Descriptions column={1} bordered size="small">
+            <Descriptions.Item label="????">{detailModal.record.inspection_date}</Descriptions.Item>
+            <Descriptions.Item label="????">{detailModal.record.inspection_type || '-'}</Descriptions.Item>
+            <Descriptions.Item label="????">{detailModal.record.issue_description}</Descriptions.Item>
+            <Descriptions.Item label="??">{detailModal.record.location || '-'}</Descriptions.Item>
+            <Descriptions.Item label="????">
+              <Tag color={severityColors[detailModal.record.severity] || 'blue'}>{detailModal.record.severity}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="????">{detailModal.record.rectification_measure || '-'}</Descriptions.Item>
+            <Descriptions.Item label="???">{detailModal.record.responsible_person || '-'}</Descriptions.Item>
+            <Descriptions.Item label="????">{detailModal.record.deadline || '-'}</Descriptions.Item>
+            <Descriptions.Item label="????">
+              <Tag color={statusColors[detailModal.record.rectification_status] || 'default'}>{detailModal.record.rectification_status}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="????">{detailModal.record.completion_date || '-'}</Descriptions.Item>
+            <Descriptions.Item label="????">{detailModal.record.is_closed ? '?' : '?'}</Descriptions.Item>
+            <Descriptions.Item label="????">{detailModal.record.overdue_days || 0}</Descriptions.Item>
+          </Descriptions>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
+export default Inspections

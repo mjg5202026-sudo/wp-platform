@@ -1,0 +1,88 @@
+# -*- coding: utf-8 -*-
+"""按月输出影响最长的因素（带日期）- 输出到文件"""
+import sys
+sys.path.insert(0, r'D:\soft\work-flow\wp-platform')
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+import xlrd
+from collections import defaultdict
+
+from backend.analysis.classifier import Classifier
+cls = Classifier()
+
+wb = xlrd.open_workbook(r'D:\工作\装备能源\经营分析\2026年\影响作业率因素统计 2026.xls')
+sh = wb.sheet_by_index(0)
+datemode = wb.datemode
+
+month_factor = defaultdict(lambda: defaultdict(float))
+month_factor_dates = defaultdict(lambda: defaultdict(set))
+# 也追踪每月的产线分钟数
+month_line_mins = defaultdict(lambda: defaultdict(float))
+
+for r in range(1, sh.nrows):
+    v = sh.cell_value(r, 0)
+    if not v:
+        continue
+    if isinstance(v, (int, float)) and v > 40000:
+        t = xlrd.xldate_as_tuple(v, datemode)
+        if t[0] != 2026 or t[1] < 1 or t[1] > 6:
+            continue
+        month = t[1]
+        day = t[2]
+        ds = f'{month:02d}/{day:02d}'
+    elif isinstance(v, str) and v.startswith('2026.'):
+        parts = v.strip().split('.')
+        if len(parts) >= 3:
+            month = int(parts[1])
+            if month < 1 or month > 6:
+                continue
+            day = int(parts[2])
+            ds = f'{month:02d}/{day:02d}'
+        else:
+            continue
+    else:
+        continue
+
+    line = str(sh.cell_value(r, 3)).strip()
+    reason = str(sh.cell_value(r, 9)).strip()
+    factor = str(sh.cell_value(r, 4)).strip()
+    mins = sh.cell_value(r, 7)
+    if not isinstance(mins, (int, float)) or mins <= 0:
+        continue
+
+    ln = cls.get_line_number(line)
+    if ln not in [1, 2, 3]:
+        continue
+    if cls.should_exclude(reason):
+        continue
+    if cls.is_planned_maintenance(reason):
+        continue
+
+    month_factor[month][factor] += mins
+    month_factor_dates[month][factor].add(ds)
+
+month_names = {1:'1月', 2:'2月', 3:'3月', 4:'4月', 5:'5月', 6:'6月'}
+output = []
+for m in range(1, 7):
+    ranked = sorted(month_factor[m].items(), key=lambda x: -x[1])
+    total = sum(v for _, v in ranked)
+    output.append(f'\n===== {month_names[m]} =====')
+    output.append(f'当月有效停机合计: {total:.0f}min')
+    output.append(f'{"#":>3} {"影响因素(去排除后)":<50} {"停机(min)":>10} {"日期":<30}')
+    output.append('-' * 95)
+    for i, (factor, mins_sum) in enumerate(ranked[:12], 1):
+        dates_list = sorted(month_factor_dates[m][factor], key=lambda d: (int(d.split('/')[0]), int(d.split('/')[1])))
+        dates_str = ', '.join(dates_list)
+        disp = factor if len(factor) <= 46 else factor[:43] + '...'
+        output.append(f'{i:>3} {disp:<50} {mins_sum:>8.0f}   {dates_str}')
+    # 补充说明
+    if ranked:
+        top_pct = sum(v for _, v in ranked[:3]) / total * 100
+        output.append(f'  前三项占总停机: {top_pct:.0f}%')
+
+with open(r'D:\工作\装备能源\经营分析\2026年\每月Top因素分析.txt', 'w', encoding='utf-8') as f:
+    f.write('\n'.join(output))
+print('已保存:', r'D:\工作\装备能源\经营分析\2026年\每月Top因素分析.txt')
+for line in output:
+    print(line)

@@ -1,0 +1,3 @@
+@echo off
+set NODE_PATH=%APPDATA%\npm\node_modules
+node "C:\Users\dell\.claude\projects\d--soft-python-vscode-Daily-plan\gen_final.js"

@@ -1,0 +1,89 @@
+"""Main — CLI 入口。"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import typer
+from rich.console import Console
+from rich.logging import RichHandler
+
+from config import OUTPUT_DIR, ParserConfig
+from src.utils.logger import setup_logger
+
+app = typer.Typer(
+    name="document-reader",
+    help="企业级文档解析工具 —— 读取 PDF、扫描件、图片、Word、Excel。",
+    add_completion=False,
+)
+console = Console()
+
+
+@app.command()
+def parse(
+    input_path: Path = typer.Argument(
+        ...,
+        help="输入文件或目录路径",
+        exists=True,
+        readable=True,
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output", "-o",
+        help="输出目录（默认 output/ 下按时间戳创建）",
+        file_okay=False,
+    ),
+    ocr_mode: str = typer.Option(
+        "auto",
+        "--ocr-mode", "-O",
+        help="OCR 模式: auto / force / skip",
+    ),
+    lang: str | None = typer.Option(
+        None,
+        "--lang", "-l",
+        help="OCR 语言（覆盖默认 ch,en）",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="输出详细日志",
+    ),
+) -> None:
+    """解析文档并输出结构化 Markdown + 元数据。"""
+    logger = setup_logger(
+        name="document-reader",
+        level="DEBUG" if verbose else "INFO",
+    )
+    logger.info("开始解析: %s", input_path)
+
+    # 构建配置
+    cfg = ParserConfig()
+    if lang:
+        cfg.ocr_lang = lang
+    if ocr_mode in ("force", "skip", "auto"):
+        from config import OcrMode
+        cfg.ocr_mode = OcrMode(ocr_mode)
+
+    output_dir = output or _make_output_dir()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # TODO: 在 Step 2 中实现完整解析逻辑
+    console.print(f"[green]✓[/] 输入: {input_path}")
+    console.print(f"[green]✓[/] 输出目录: {output_dir}")
+    console.print(f"[green]✓[/] OCR 模式: {cfg.ocr_mode.value}")
+    console.print("[yellow]⚠[/] 解析引擎尚未实现，将在 Step 2 完成。")
+
+
+def _make_output_dir() -> Path:
+    """按时间戳创建输出目录。"""
+    from datetime import datetime
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return OUTPUT_DIR / ts
+
+
+def main() -> None:
+    app()
+
+
+if __name__ == "__main__":
+    main()

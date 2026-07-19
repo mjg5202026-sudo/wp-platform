@@ -1,0 +1,24 @@
+# -*- coding: utf-8 -*-
+"""Fix item 5 - reward in June"""
+from docx import Document
+from docx.oxml.ns import qn
+
+path = 'D:\\soft\\work-flow\\wp-platform\\data\\reports\\2026年二季度EPR_完整版.docx'
+doc = Document(path)
+
+new_text = ("5.生产保障部2025年全年消耗自卸车轮胎、装载机轮胎627条，"
+    "2026年1-5月份累计消耗226条。结合历史消耗数据及年度提质增效目标，"
+    "自2026年6月份起将轮胎消耗单独纳入提质增效考核，"
+    "核定2026年6-12月份自卸车轮胎、装载机轮胎消耗指标350条，并按月进行分解考核。"
+    "6月份单月轮胎消耗指标50条，实际消耗40条，较指标节约10条。"
+    "依据考核标准：每节约轮胎1条奖励10美元，奖励生产保障部100美元。")
+
+for i, p in enumerate(doc.paragraphs):
+    if '轮胎消耗单独纳入' in p.text:
+        for r in p.runs:
+            r.text = ""
+        (p.runs[0] if p.runs else p.add_run("")).text = new_text
+        break
+
+doc.save(path)
+print("Fixed: 奖励100美元")

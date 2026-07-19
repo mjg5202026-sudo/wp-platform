@@ -1,0 +1,33 @@
+import React from 'react'
+import { Card, Table, Tag, Progress, Space, Empty } from 'antd'
+
+const mockProjects = [
+  { key: '1', name: '4#生产线技改', type: '技术改造项目', investment: 1200, completed: 720, rate: 60, status: '进行中', start: '2026-01', end: '2026-12', remark: '按计划推进中' },
+  { key: '2', name: '4#电炉系统', type: '技术改造项目', investment: 450, completed: 380, rate: 84, status: '进行中', start: '2026-02', end: '2026-09', remark: '设备安装中' },
+  { key: '3', name: '4#除尘系统', type: '技术改造项目', investment: 350, completed: 280, rate: 80, status: '进行中', start: '2026-02', end: '2026-08', remark: '主体完工' },
+  { key: '4', name: '厂区照明改造', type: '维修项目', investment: 180, completed: 60, rate: 33, status: '进行中', start: '2026-04', end: '2026-10', remark: '前期准备' },
+  { key: '5', name: '皮带输送系统', type: '维修项目', investment: 90, completed: 90, rate: 100, status: '已完成', start: '2026-03', end: '2026-05', remark: '已竣工' },
+]
+
+const statusColors = { '进行中': 'blue', '已完成': 'green', '已暂停': 'red', '未开始': 'default' }
+
+const columns = [
+  { title: '项目名称', dataIndex: 'name', width: 180 },
+  { title: '项目类型', dataIndex: 'type', width: 140, render: v => <Tag>{v}</Tag> },
+  { title: '总投资(万)', dataIndex: 'investment', width: 100 },
+  { title: '已完成(万)', dataIndex: 'completed', width: 100 },
+  { title: '完成率', dataIndex: 'rate', width: 150, render: v => <Progress percent={v} size="small" /> },
+  { title: '状态', dataIndex: 'status', width: 80, render: v => <Tag color={statusColors[v]}>{v}</Tag> },
+  { title: '起止时间', dataIndex: 'start', width: 120, render: (_, r) => `${r.start} ~ ${r.end}` },
+  { title: '备注', dataIndex: 'remark', ellipsis: true },
+]
+
+const Projects = () => (
+  <div className="page-container">
+    <div className="page-header"><h2>项目管理</h2><p>四号生产线技改及其他技改项目管理</p></div>
+    <Card title="项目清单" extra={<Space>总投资: <strong>2,270</strong> 万 | 综合完成率: <strong>67%</strong></Space>}>
+      <Table dataSource={mockProjects} columns={columns} rowKey="key" size="small" pagination={false} />
+    </Card>
+  </div>
+)
+export default Projects

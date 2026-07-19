@@ -1,0 +1,53 @@
+import openpyxl
+path = r"D:\工作\项目资料\码头堆棚改造\费用结算\码头堆棚施工领料明细.xlsx"
+wb = openpyxl.load_workbook(path, data_only=True)
+ws = wb[wb.sheetnames[0]]
+
+total_usd = 0
+rmb_total = 0
+idr_total = 0
+rmb_count = 0
+idr_count = 0
+zero_count = 0
+items = []
+
+for row in ws.iter_rows(min_row=4, values_only=True):
+    usd = row[8]
+    currency = str(row[18])[:10] if row[18] else ""
+
+    if usd and isinstance(usd, (int, float)):
+        total_usd += usd
+        if "印尼" in currency:
+            idr_count += 1
+        else:
+            rmb_count += 1
+        items.append(usd)
+    else:
+        zero_count += 1
+
+print(f"总行数: {ws.max_row - 3}")
+print(f"美元>0: {len(items)} 行")
+print(f"  RMB计价: {rmb_count} 行")
+print(f"  IDR计价: {idr_count} 行")
+print(f"  金额为0: {zero_count} 行")
+print(f"")
+print(f"折合美元合计: ${total_usd:,.2f}")
+print(f"")
+
+# Show distribution
+items.sort()
+print("金额分布:")
+for threshold in [1, 10, 50, 100, 500, 1000, 5000, 10000]:
+    count = sum(1 for v in items if v < threshold)
+    print(f"  < ${threshold:>5}: {count:>4} 项")
+# Show big items
+big_items = [(row[8], row[2], row[5], row[3], row[7]) for row in ws.iter_rows(min_row=4, values_only=True) if row[8] and isinstance(row[8], (int, float)) and row[8] >= 1000]
+big_items.sort(key=lambda x: -x[0])
+
+print(f"\n金额>= $1,000 的大项 (共{len(big_items)}项):")
+for usd, name, qty, unit, amt in big_items:
+    n = str(name)[:25] if name else ""
+    u = str(unit)[:8] if unit else ""
+    q = qty if qty else 0
+    a = amt if amt else 0
+    print(f"  ${usd:>8.2f} | {n:25s} x{q:>6} {u:6s} | 原币金额={a:>12}")

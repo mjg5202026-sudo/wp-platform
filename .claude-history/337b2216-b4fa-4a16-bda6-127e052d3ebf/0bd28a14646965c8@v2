@@ -1,0 +1,287 @@
+const fs = require("fs");
+const { Document, Packer, Paragraph, TextRun, Header, Footer,
+        AlignmentType, HeadingLevel, BorderStyle, WidthType,
+        PageNumber, PageBreak } = require("docx");
+
+const OUT = "D:\\工作\\装备能源\\固定资产\\废铁销售\\印尼金川WP公司废铁销售询价文件（双语版）.docx";
+
+const FONT = "宋体";
+const TITLE_FONT = "Arial";
+
+// Helper functions
+function tr(text, opts = {}) {
+  return new TextRun({ text, font: opts.font || FONT, size: opts.size || 21, bold: opts.bold || false });
+}
+
+function p(children, opts = {}) {
+  const arr = Array.isArray(children) ? children : [tr(children)];
+  return new Paragraph({
+    children: arr,
+    alignment: opts.alignment,
+    spacing: opts.spacing || { after: 40 },
+    indent: opts.indent,
+  });
+}
+
+function empty() {
+  return new Paragraph({ children: [tr("")], spacing: { after: 40 } });
+}
+
+function bodyLine(text, indent = true) {
+  return new Paragraph({
+    children: [tr(text)],
+    indent: indent ? { firstLine: 420 } : undefined,
+    spacing: { after: 40 },
+  });
+}
+
+function heading(text) {
+  return new Paragraph({
+    children: [tr(text, { bold: true, size: 24 })],
+    spacing: { before: 200, after: 100 },
+    keepNext: true,
+  });
+}
+
+function biLine(zh, id) {
+  return new Paragraph({
+    children: [
+      tr(zh),
+      tr("  /  ", { font: TITLE_FONT, size: 18 }),
+      tr(id, { font: TITLE_FONT, size: 18 }),
+    ],
+    indent: { firstLine: 420 },
+    spacing: { after: 60 },
+  });
+}
+
+function biHeading(zh, id) {
+  return new Paragraph({
+    children: [
+      tr(zh, { bold: true, size: 24 }),
+      tr("  /  ", { font: TITLE_FONT, size: 24 }),
+      tr(id, { font: TITLE_FONT, bold: true, size: 24 }),
+    ],
+    spacing: { before: 200, after: 100 },
+    keepNext: true,
+  });
+}
+
+const children = [
+  // TITLE
+  empty(),
+  new Paragraph({
+    children: [
+      tr("印尼金川WP公司", { size: 36, bold: true }),
+      tr("\n", { size: 10 }),
+    ],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 0 },
+  }),
+  new Paragraph({
+    children: [
+      tr("废铁销售询价文件", { size: 44, bold: true }),
+      tr("  /  ", { size: 28 }),
+      tr("SURAT PERMINTAAN PENAWARAN", { font: TITLE_FONT, size: 28, bold: true }),
+      tr("\n", { size: 10 }),
+      tr("Pembelian Besi Tua (Scrap)", { font: TITLE_FONT, size: 28, bold: true }),
+    ],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 40 },
+  }),
+  empty(),
+
+  // NOMOR / LAMPIRAN
+  p([
+    tr("Nomor", { font: TITLE_FONT, bold: true }),
+    tr(" : WP-SC-2026-001"),
+  ], { alignment: AlignmentType.LEFT }),
+  p([
+    tr("Lampiran", { font: TITLE_FONT, bold: true }),
+    tr(" : 1 (satu) berkas"),
+  ]),
+  p([
+    tr("Perihal", { font: TITLE_FONT, bold: true }),
+    tr(" : Permintaan Penawaran Pembelian Besi Tua"),
+  ]),
+  empty(),
+
+  // Kepada Yth.
+  p([tr("Kepada Yth.", { font: TITLE_FONT, bold: true })]),
+  p([tr("PT. Indonesia Jinchuan Construction", { font: TITLE_FONT })]),
+  p([tr("di - Tempat", { font: TITLE_FONT })]),
+  empty(),
+
+  // 致
+  p([tr("致：", { bold: true, size: 24 })]),
+  p([tr("印尼金川建设有限公司", { bold: true, size: 24 })]),
+  empty(),
+
+  // 引言 / Pendahuluan
+  new Paragraph({
+    children: [
+      tr("根据印尼金川WP公司年度废旧物资管理工作计划及废铁销售需求，我司拟组织实施印尼金川WP公司废铁销售项目。现本着公平、公正、择优的原则，诚邀贵单位参与本项目废铁销售询价工作，望贵单位凭借专业的经营资质、成熟的采购经验及完善的服务体系积极响应。现将本项目相关信息、销售要求及报价事宜明确如下："),
+      tr("\n\n", { size: 10 }),
+      tr("Berdasarkan rencana kerja pengelolaan barang bekas tahunan dan kebutuhan penjualan besi tua PT. WP, kami bermaksud melaksanakan proyek penjualan besi tua PT. WP Indonesia Jinchuan. Dengan prinsip adil, transparan, dan selektif, kami mengundang perusahaan Bapak/Ibu untuk berpartisipasi dalam permintaan penawaran ini. Berikut ini adalah informasi proyek, ketentuan penjualan, dan hal-hal terkait harga yang perlu diketahui:", { font: TITLE_FONT, size: 21 }),
+    ],
+    indent: { firstLine: 420 },
+    spacing: { after: 80 },
+  }),
+  empty(),
+
+  // ===== 一、项目概况 =====
+  biHeading("一、项目概况", "I. INFORMASI UMUM PROYEK"),
+  biLine("1.项目名称：印尼金川WP公司废铁销售项目。", "1. Nama Proyek: Proyek Penjualan Besi Tua PT. WP Indonesia Jinchuan."),
+  biLine("2.项目地点：印度尼西亚北马鲁古省南哈马黑拉县奥比岛。", "2. Lokasi Proyek: Pulau Obi, Kabupaten Halmahera Selatan, Provinsi Maluku Utara, Indonesia."),
+  biLine("3.销售规模：主要包括冶炼部改造及日常检修产生的废钢、废旧钢结构、报废设备拆解废钢等。", "3. Lingkup Penjualan: Besi tua dari modifikasi smelter, besi konstruksi bekas, limbah besi dari peralatan yang sudah tidak terpakai, dan besi bekas pemeliharaan harian."),
+  empty(),
+
+  // ===== 二、销售范围及内容 =====
+  biHeading("二、销售范围及内容", "II. RUANG LINGKUP PENJUALAN"),
+  biLine("1.销售范围：印尼金川WP公司废铁（包括冶炼部改造后的废钢、废旧铁结构及公司报废钢材）。", "1. Ruang Lingkup: Besi tua PT. WP (besi bekas modifikasi smelter, besi konstruksi bekas, dan limbah besi perusahaan)."),
+  biLine("2.销售数量：以实际过磅计量为准。", "2. Volume Penjualan: Berdasarkan hasil timbang aktual."),
+  biLine("3.提货期限：以我公司书面通知为准。", "3. Jangka Waktu Pengambilan: Berdasarkan pemberitahuan tertulis dari perusahaan kami."),
+  biLine("4.运输方式：废铁集中至WP公司指定区域，由WP公司负责陆运至码头，海运由购买方负责。", "4. Transportasi: Scrap dikumpulkan di area yang ditentukan PT. WP, diangkut darat oleh PT. WP ke jetty, dan transportasi laut menjadi tanggung jawab pembeli."),
+  empty(),
+
+  // ===== 三、资格要求 =====
+  biHeading("三、资格要求", "III. PERSYARATAN KUALIFIKASI"),
+  biLine("1.须具有独立法人资格的废铁回收、销售或相关经营资质的单位。", "1. Perusahaan pembeli wajib memiliki legalitas usaha yang masih berlaku di bidang daur ulang besi tua atau perdagangan logam."),
+  biLine("2.具备合法有效的营业执照（经营范围涵盖废旧物资回收或金属材料销售）。", "2. Memiliki izin usaha yang sah (lingkup usaha meliputi daur ulang barang bekas atau penjualan material logam)."),
+  biLine("3.具有良好的银行资信和商业信誉。", "3. Memiliki reputasi bank dan bisnis yang baik."),
+  biLine("4.近3年具有废铁回收或金属材料采购相关业绩。", "4. Memiliki pengalaman terkait daur ulang besi tua atau pembelian material logam dalam 3 tahun terakhir."),
+  biLine("5.具有良好的信誉，无重大违约记录。", "5. Memiliki reputasi baik dan tidak pernah melanggar kontrak secara signifikan."),
+  biLine("6.具有依法纳税记录，能够开具合规的增值税发票。", "6. Memiliki catatan perpajakan yang baik dan dapat menerbitkan faktur PPN yang sah."),
+  empty(),
+
+  // ===== 四、评审办法 =====
+  biHeading("四、评审办法", "IV. METODE EVALUASI"),
+  biLine("1.先进行资格符合性审查，合格后方可进入详细评审。", "1. Dilakukan pemeriksaan kualifikasi terlebih dahulu, yang memenuhi syarat dapat masuk ke evaluasi rinci."),
+  biLine("2.详细评审采用最高价法：报价最高者中标。", "2. Metode evaluasi: Harga tertinggi. Peserta dengan penawaran harga tertinggi akan ditetapkan sebagai pemenang."),
+  biLine("3.最高报价相同者，由评审小组综合评定确定。", "3. Apabila terdapat harga tertinggi yang sama, tim evaluasi akan menentukan berdasarkan pengalaman, reputasi, dan rencana transportasi."),
+  empty(),
+
+  // ===== 五、销售范围及报价 =====
+  biHeading("五、销售范围及报价要求", "V. LINGKUP PENJUALAN & KETENTUAN HARGA"),
+  biLine("本次销售废铁主要包括：冶炼部设备改造拆除产生的废钢、废旧钢结构及建筑废钢、报废设备拆解形成的废钢材料、日常检修产生的废旧钢材。", "Material scrap yang dijual meliputi: besi bekas modifikasi smelter, besi konstruksi bekas, limbah besi dari peralatan yang sudah tidak terpakai, dan besi bekas pemeliharaan harian."),
+  biLine("计量方式：以印尼金川WP公司地磅实际过磅重量为准。", "Metode pengukuran: Berdasarkan hasil timbang aktual timbangan PT. WP."),
+  biLine("提货方式：购买方自提。购买方负责装车、运输及清场。", "Metode pengambilan: Diambil sendiri oleh pembeli. Pembeli bertanggung jawab atas loading, transportasi, dan pembersihan area."),
+  empty(),
+  biLine("报价方式：统一按每吨单价报价（印尼盾/吨）。", "Metode Penawaran Harga: Harga per ton (Rp/ton)."),
+  biLine("报价货币：印度尼西亚盾（Rp）。", "Mata Uang: Rupiah Indonesia (Rp)."),
+  biLine("报价为含税价（含增值税/PPN）。", "Harga sudah termasuk PPN."),
+  biLine("报价有效期：自报价之日起30日历天。", "Masa berlaku penawaran: 30 hari kalender sejak tanggal penawaran."),
+  biLine("付款条件：先款后货，货款结清后放货。", "Ketentuan pembayaran: Pembayaran di muka, barang dilepaskan setelah pembayaran lunas."),
+  empty(),
+
+  // ===== 六、报价表 =====
+  biHeading("六、报价表", "VI. DAFTAR PENAWARAN HARGA"),
+  empty(),
+  new Paragraph({
+    children: [tr("印尼金川WP公司废铁销售报价表 / Daftar Penawaran Harga Besi Tua", { bold: true })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 100 },
+  }),
+  empty(),
+  new Paragraph({
+    children: [
+      tr("No", { bold: true }),
+      tr("     ", { size: 10 }),
+      tr("Uraian / 类别", { bold: true }),
+      tr("                              ", { size: 10 }),
+      tr("Harga Satuan / 单价", { bold: true }),
+      tr("          ", { size: 10 }),
+      tr("Keterangan / 备注", { bold: true }),
+    ],
+    spacing: { after: 60 },
+  }),
+  new Paragraph({
+    children: [
+      tr("1", { bold: true }),
+      tr("     "),
+      tr("Besi Tua (Scrap) / 废铁"),
+      tr("                        "),
+      tr("Rp. _________ / ton"),
+      tr("          "),
+      tr("Termasuk PPN / 含税"),
+    ],
+    spacing: { after: 60 },
+  }),
+  empty(),
+  p([tr("备注 / Catatan:")]),
+  p([tr("1. Harga sudah termasuk PPN / 以上报价均为含税价。")]),
+  p([tr("2. Pembayaran dilakukan di muka sebelum barang diambil / 先款后货。")]),
+  p([tr("3. Harga tidak termasuk biaya transportasi laut / 价格不含海运费用。")]),
+  empty(),
+
+  // ===== 七、合同主要条款 =====
+  biHeading("七、合同主要条款", "VII. KETENTUAN KONTRAK"),
+  biLine("1.合同期限：6个月或1年，可续签。", "1. Jangka waktu kontrak: 6 bulan atau 1 tahun, dapat diperpanjang."),
+  biLine("2.付款方式：先支付预付款，最终按实际过磅重量结算。", "2. Pembayaran: DP di muka, pelunasan berdasarkan hasil timbang aktual."),
+  biLine("3.履约保证金：合同价款的2%。", "3. Jaminan pelaksanaan: 2% dari nilai kontrak."),
+  biLine("4.废铁销售须具备完整的管理文件。", "4. Penjualan scrap harus dilengkapi dokumen administrasi yang sah."),
+  empty(),
+
+  // ===== 八、报价截止时间 =====
+  biHeading("八、报价截止时间", "VIII. BATAS AKHIR PENAWARAN"),
+  biLine("截止时间：2026年7月15日。", "Batas akhir: 15 Juli 2026."),
+  biLine("提交方式：电子版发送至指定邮箱。", "Pengiriman: File elektronik dikirim ke email yang ditentukan."),
+  empty(),
+
+  // ===== 九、其他说明 =====
+  biHeading("九、其他说明", "IX. KETENTUAN LAIN"),
+  biLine("1.甲方有权择优确定合作单位。", "1. PT. WP berhak memilih mitra kerja terbaik."),
+  biLine("2.报价资料需真实有效。", "2. Data penawaran harus sah dan benar."),
+  biLine("3.本文件为询价依据，最终以正式合同为准。", "3. Dokumen ini sebagai dasar permintaan penawaran, kontrak resmi sebagai dasar final."),
+  biLine("4.交易、税务及财务核算应符合印尼法律法规。", "4. Pembayaran, perpajakan, dan pencatatan transaksi wajib mengikuti ketentuan perpajakan Indonesia."),
+  empty(),
+  empty(),
+
+  // ===== 联系人 =====
+  new Paragraph({
+    children: [
+      tr("Hormat kami,", { font: TITLE_FONT }),
+      tr("\n", { size: 10 }),
+      tr("印尼金川WP公司 / PT. WP Indonesia Jinchuan"),
+    ],
+    spacing: { after: 40 },
+  }),
+  empty(),
+  empty(),
+  empty(),
+  empty(),
+
+  // Contact
+  p([tr("Kontak / 联系人：Liu Caixia / 刘彩霞")]),
+  p([tr("Telp / 电话：13830587721")]),
+  p([tr("Email：892350096@qq.com")]),
+  empty(),
+
+  // Date
+  p([tr("Makassar, 1 Juli 2026 / 2026年7月1日")]),
+];
+
+const doc = new Document({
+  styles: {
+    default: {
+      document: {
+        run: { font: FONT, size: 21 },
+      },
+    },
+  },
+  sections: [{
+    properties: {
+      page: {
+        size: { width: 11906, height: 16838 },
+        margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+      },
+    },
+    children,
+  }],
+});
+
+Packer.toBuffer(doc).then(buffer => {
+  fs.writeFileSync(OUT, buffer);
+  console.log("SUCCESS: Created " + OUT);
+  console.log("Size: " + buffer.length + " bytes");
+});

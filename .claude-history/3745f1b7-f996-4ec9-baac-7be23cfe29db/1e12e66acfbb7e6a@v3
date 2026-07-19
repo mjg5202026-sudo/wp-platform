@@ -1,0 +1,1053 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Comprehensive .docx extraction script.
+Extracts ALL formatting details from a Word document.
+"""
+
+import docx
+from docx import Document
+from docx.shared import Inches, Pt, Cm, Emu, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.section import WD_ORIENT
+from docx.oxml.ns import qn, nsdecls
+from docx.oxml import parse_xml
+import os, sys
+from datetime import datetime
+
+INPUT_FILE = r"D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（终）.docx"
+OUTPUT_FILE = r"C:\Users\dell\.claude\projects\d--soft-python-vscode-Daily-plan\final_report_template.txt"
+
+# Check file existence
+if not os.path.isfile(INPUT_FILE):
+    print(f"ERROR: File not found: {INPUT_FILE}")
+    # Try alternate paths
+    alt_paths = [
+        r"D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（终）.docx",
+    ]
+    for p in alt_paths:
+        if os.path.isfile(p):
+            INPUT_FILE = p
+            print(f"Found at: {INPUT_FILE}")
+            break
+    else:
+        sys.exit(1)
+
+doc = Document(INPUT_FILE)
+
+def alignment_str(align):
+    """Convert alignment enum to string."""
+    mapping = {
+        None: "None (inherited)",
+        WD_ALIGN_PARAGRAPH.LEFT: "LEFT",
+        WD_ALIGN_PARAGRAPH.CENTER: "CENTER",
+        WD_ALIGN_PARAGRAPH.RIGHT: "RIGHT",
+        WD_ALIGN_PARAGRAPH.JUSTIFY: "JUSTIFY",
+    }
+    return mapping.get(align, str(align))
+
+def emu_to_cm(emu):
+    """Convert EMU to cm."""
+    if emu is None:
+        return None
+    return round(emu / 360000, 2)
+
+def twip_to_cm(twip):
+    """Convert twips (dxa) to cm. 1 twip = 1/1440 inch."""
+    if twip is None:
+        return None
+    return round(twip / 1440 * 2.54, 2)
+
+def twip_to_pt(twip):
+    """Convert twips to points. 1 pt = 20 twips."""
+    if twip is None:
+        return None
+    return round(twip / 20, 1)
+
+def emu_to_pt(emu):
+    """Convert EMU to pt."""
+    if emu is None:
+        return None
+    return round(emu / 12700, 1)
+
+def pt_or_none(val):
+    """Return value in pt or None (val is in EMU, convert to pt)."""
+    if val is None:
+        return None
+    return round(val / 12700, 1)
+
+def bool_or_none(val):
+    if val is None:
+        return "None"
+    return str(val)
+
+def get_font_info(run):
+    """Extract detailed font info from a run."""
+    font = run.font
+    info = {}
+    info['text'] = run.text
+
+    # Font name
+    info['font_name'] = font.name
+    # East Asian font name
+    rPr = run._element.find(qn('w:rPr'))
+    if rPr is not None:
+        rFonts = rPr.find(qn('w:rFonts'))
+        if rFonts is not None:
+            info['font_name_ascii'] = rFonts.get(qn('w:ascii'))
+            info['font_name_hansi'] = rFonts.get(qn('w:hAnsi'))
+            info['font_name_eastAsia'] = rFonts.get(qn('w:eastAsia'))
+
+    # Font size
+    info['font_size'] = pt_or_none(font.size) if font.size else None
+    # Bold
+    info['bold'] = bool_or_none(font.bold)
+    # Italic
+    info['italic'] = bool_or_none(font.italic)
+    # Underline
+    info['underline'] = bool_or_none(font.underline)
+    # Color
+    if font.color and font.color.rgb:
+        info['color'] = str(font.color.rgb)
+    else:
+        info['color'] = None
+    # Strike
+    info['strike'] = bool_or_none(font.strike)
+    # Superscript/subscript
+    info['superscript'] = bool_or_none(font.superscript)
+    info['subscript'] = bool_or_none(font.subscript)
+
+    return info
+
+
+def get_paragraph_info(para):
+    """Extract detailed paragraph info."""
+    info = {}
+    info['text'] = para.text
+    info['style'] = para.style.name if para.style else "None"
+    info['alignment'] = alignment_str(para.alignment)
+
+    fmt = para.paragraph_format
+    info['first_line_indent'] = emu_to_cm(fmt.first_line_indent)
+    info['left_indent'] = emu_to_cm(fmt.left_indent)
+    info['right_indent'] = emu_to_cm(fmt.right_indent)
+    info['space_before'] = pt_or_none(fmt.space_before)
+    info['space_after'] = pt_or_none(fmt.space_after)
+
+    # Line spacing
+    line_spacing = fmt.line_spacing
+    if line_spacing is not None:
+        info['line_spacing'] = round(line_spacing, 2)
+    else:
+        info['line_spacing'] = None
+    info['line_spacing_rule'] = str(fmt.line_spacing_rule) if fmt.line_spacing_rule else None
+
+    # Keep with next / page break before
+    info['keep_with_next'] = fmt.keep_with_next
+    info['page_break_before'] = fmt.page_break_before
+    info['widow_control'] = fmt.widow_control
+
+    # Outline level (for headings that aren't using heading styles)
+    pPr = para._element.find(qn('w:pPr'))
+    if pPr is not None:
+        outlineLvl = pPr.find(qn('w:outlineLvl'))
+        if outlineLvl is not None:
+            info['outline_level'] = outlineLvl.get(qn('w:val'))
+
+    # Paragraph borders
+    pBdr = pPr.find(qn('w:pBdr')) if pPr is not None else None
+    if pBdr is not None:
+        info['borders'] = {}
+        for side in ['top', 'bottom', 'left', 'right', 'between']:
+            side_el = pBdr.find(qn(f'w:{side}'))
+            if side_el is not None:
+                info['borders'][side] = {
+                    'val': side_el.get(qn('w:val')),
+                    'sz': side_el.get(qn('w:sz')),
+                    'color': side_el.get(qn('w:color')),
+                    'space': side_el.get(qn('w:space')),
+                }
+
+    # Shading
+    shd = pPr.find(qn('w:shd')) if pPr is not None else None
+    if shd is not None:
+        info['shading'] = {
+            'val': shd.get(qn('w:val')),
+            'color': shd.get(qn('w:color')),
+            'fill': shd.get(qn('w:fill')),
+        }
+
+    # Numbering
+    numPr = pPr.find(qn('w:numPr')) if pPr is not None else None
+    if numPr is not None:
+        numId = numPr.find(qn('w:numId'))
+        ilvl = numPr.find(qn('w:ilvl'))
+        info['numbering'] = {
+            'numId': numId.get(qn('w:val')) if numId is not None else None,
+            'ilvl': ilvl.get(qn('w:val')) if ilvl is not None else None,
+        }
+
+    # Runs
+    info['runs'] = []
+    for run in para.runs:
+        info['runs'].append(get_font_info(run))
+
+    # Hyperlinks in paragraph
+    info['hyperlinks'] = []
+    for hyperlink in para._element.findall('.//' + qn('w:hyperlink')):
+        link_info = {}
+        link_info['rId'] = hyperlink.get(qn('r:id'))
+        # Get display text
+        texts = [t.text for t in hyperlink.findall('.//' + qn('w:t'))]
+        link_info['text'] = ''.join(texts)
+        info['hyperlinks'].append(link_info)
+
+    # Page breaks
+    if pPr is not None:
+        pb = pPr.find(qn('w:pageBreakBefore'))
+        info['xml_page_break_before'] = pb is not None
+        # Check for lastRenderedPageBreak in runs
+        info['has_page_break_in_run'] = False
+        for run in para.runs:
+            br_elements = run._element.findall('.//' + qn('w:br'))
+            for br in br_elements:
+                if br.get(qn('w:type')) == 'page':
+                    info['has_page_break_in_run'] = True
+                    break
+
+    return info
+
+
+def get_cell_info(cell):
+    """Extract detailed cell info."""
+    info = {}
+    info['text'] = cell.text
+
+    # Cell shading
+    tc = cell._tc
+    tcPr = tc.find(qn('w:tcPr'))
+    if tcPr is not None:
+        shd = tcPr.find(qn('w:shd'))
+        if shd is not None:
+            info['shading'] = {
+                'val': shd.get(qn('w:val')),
+                'color': shd.get(qn('w:color')),
+                'fill': shd.get(qn('w:fill')),
+            }
+
+        # Cell width
+        tcW = tcPr.find(qn('w:tcW'))
+        if tcW is not None:
+            w_type = tcW.get(qn('w:type'))
+            w_val = tcW.get(qn('w:w'))
+            info['width'] = {'type': w_type, 'value': w_val,
+                'cm': twip_to_cm(int(w_val)) if w_type == 'dxa' and w_val and w_val.isdigit()
+                      else emu_to_cm(int(w_val)) if w_val and w_val.isdigit() else None}
+
+        # Vertical alignment
+        vAlign = tcPr.find(qn('w:vAlign'))
+        if vAlign is not None:
+            info['vAlign'] = vAlign.get(qn('w:val'))
+
+        # Cell margins
+        tcMar = tcPr.find(qn('w:tcMar'))
+        if tcMar is not None:
+            info['cell_margins'] = {}
+            for side in ['top', 'bottom', 'left', 'right']:
+                side_el = tcMar.find(qn(f'w:{side}'))
+                if side_el is not None:
+                    w_val = side_el.get(qn('w:w'))
+                    info['cell_margins'][side] = twip_to_pt(int(w_val)) if w_val and w_val.isdigit() else None
+
+        # Grid span
+        gridSpan = tcPr.find(qn('w:gridSpan'))
+        if gridSpan is not None:
+            info['gridSpan'] = gridSpan.get(qn('w:val'))
+
+        # Vertical merge
+        vMerge = tcPr.find(qn('w:vMerge'))
+        if vMerge is not None:
+            info['vMerge'] = vMerge.get(qn('w:val'))  # 'continue' or 'restart'
+
+        # Text direction
+        textDir = tcPr.find(qn('w:textDirection'))
+        if textDir is not None:
+            info['textDirection'] = textDir.get(qn('w:val'))
+
+    # Paragraphs within cell
+    info['paragraphs'] = []
+    for para in cell.paragraphs:
+        info['paragraphs'].append(get_paragraph_info(para))
+
+    return info
+
+
+def get_table_info(table, idx):
+    """Extract detailed table info."""
+    info = {}
+    info['table_index'] = idx
+
+    # Table dimensions
+    info['rows'] = len(table.rows)
+    info['columns'] = len(table.columns)
+
+    # Table alignment
+    tbl = table._tbl
+    tblPr = tbl.find(qn('w:tblPr'))
+    if tblPr is not None:
+        tblW = tblPr.find(qn('w:tblW'))
+        if tblW is not None:
+            w_val = tblW.get(qn('w:w'))
+            w_type = tblW.get(qn('w:type'))
+            info['width'] = {
+                'type': w_type,
+                'value': w_val,
+                'cm': twip_to_cm(int(w_val)) if w_type == 'dxa' and w_val and w_val.isdigit()
+                      else emu_to_cm(int(w_val)) if w_val and w_val.isdigit() else None
+            }
+
+        # Table alignment
+        jc = tblPr.find(qn('w:jc'))
+        if jc is not None:
+            info['alignment'] = jc.get(qn('w:val'))
+
+        # Table indentation
+        tblInd = tblPr.find(qn('w:tblInd'))
+        if tblInd is not None:
+            info['indent'] = {
+                'w': tblInd.get(qn('w:w')),
+                'type': tblInd.get(qn('w:type')),
+            }
+
+        # Table borders
+        tblBorders = tblPr.find(qn('w:tblBorders'))
+        if tblBorders is not None:
+            info['borders'] = {}
+            for side in ['top', 'bottom', 'left', 'right', 'insideH', 'insideV']:
+                side_el = tblBorders.find(qn(f'w:{side}'))
+                if side_el is not None:
+                    info['borders'][side] = {
+                        'val': side_el.get(qn('w:val')),
+                        'sz': side_el.get(qn('w:sz')),
+                        'color': side_el.get(qn('w:color')),
+                        'space': side_el.get(qn('w:space')),
+                    }
+
+        # Table cell margins (default)
+        tblCellMar = tblPr.find(qn('w:tblCellMar'))
+        if tblCellMar is not None:
+            info['default_cell_margins'] = {}
+            for side in ['top', 'bottom', 'left', 'right']:
+                side_el = tblCellMar.find(qn(f'w:{side}'))
+                if side_el is not None:
+                    w_val = side_el.get(qn('w:w'))
+                    info['default_cell_margins'][side] = twip_to_pt(int(w_val)) if w_val and w_val.isdigit() else None
+
+        # Table look (style options)
+        tblLook = tblPr.find(qn('w:tblLook'))
+        if tblLook is not None:
+            info['tblLook'] = {}
+            for attr in ['val', 'firstRow', 'lastRow', 'firstColumn', 'lastColumn', 'noHBand', 'noVBand']:
+                v = tblLook.get(qn(f'w:{attr}'))
+                if v is not None:
+                    info['tblLook'][attr] = v
+
+    # Column widths from grid
+    tblGrid = tbl.find(qn('w:tblGrid'))
+    if tblGrid is not None:
+        info['grid_cols'] = []
+        for gridCol in tblGrid.findall(qn('w:gridCol')):
+            w_val = gridCol.get(qn('w:w'))
+            info['grid_cols'].append({
+                'twip': w_val,
+                'cm': twip_to_cm(int(w_val)) if w_val and w_val.isdigit() else None
+            })
+
+    # Row height
+    info['row_heights'] = []
+    for row in table.rows:
+        trPr = row._tr.find(qn('w:trPr'))
+        if trPr is not None:
+            trHeight = trPr.find(qn('w:trHeight'))
+            if trHeight is not None:
+                h_val = trHeight.get(qn('w:val'))
+                h_rule = trHeight.get(qn('w:hRule'))
+                info['row_heights'].append({
+                    'twip': h_val,
+                    'cm': twip_to_cm(int(h_val)) if h_val and h_val.isdigit() else None,
+                    'pt': twip_to_pt(int(h_val)) if h_val and h_val.isdigit() else None,
+                    'hRule': h_rule
+                })
+            else:
+                info['row_heights'].append(None)
+        else:
+            info['row_heights'].append(None)
+
+        # Row banding/can't split
+        if trPr is not None:
+            cantSplit = trPr.find(qn('w:cantSplit'))
+            if cantSplit is not None:
+                if 'row_properties' not in info:
+                    info['row_properties'] = {}
+                info['row_properties'][f'row_{row._tr.index}'] = {'cantSplit': True}
+
+    # Cells
+    info['cells'] = []
+    for row_idx, row in enumerate(table.rows):
+        for col_idx, cell in enumerate(row.cells):
+            cell_info = get_cell_info(cell)
+            cell_info['row'] = row_idx
+            cell_info['col'] = col_idx
+            info['cells'].append(cell_info)
+
+    return info
+
+
+def get_section_info(section):
+    """Extract detailed section info."""
+    info = {}
+
+    # Page size
+    page_width = section.page_width
+    page_height = section.page_height
+    info['page_width'] = {
+        'emu': page_width,
+        'cm': emu_to_cm(page_width),
+        'inches': round(page_width / 914400, 2) if page_width else None
+    }
+    info['page_height'] = {
+        'emu': page_height,
+        'cm': emu_to_cm(page_height),
+        'inches': round(page_height / 914400, 2) if page_height else None
+    }
+
+    # Orientation
+    info['orientation'] = 'LANDSCAPE' if section.orientation == WD_ORIENT.LANDSCAPE else 'PORTRAIT'
+
+    # Margins
+    info['margins'] = {
+        'top': {'emu': section.top_margin, 'cm': emu_to_cm(section.top_margin)},
+        'bottom': {'emu': section.bottom_margin, 'cm': emu_to_cm(section.bottom_margin)},
+        'left': {'emu': section.left_margin, 'cm': emu_to_cm(section.left_margin)},
+        'right': {'emu': section.right_margin, 'cm': emu_to_cm(section.right_margin)},
+        'header': {'emu': section.header_distance, 'cm': emu_to_cm(section.header_distance)},
+        'footer': {'emu': section.footer_distance, 'cm': emu_to_cm(section.footer_distance)},
+        'gutter': {'emu': section.gutter, 'cm': emu_to_cm(section.gutter)},
+    }
+
+    # Columns
+    sectPr = section._sectPr
+    cols = sectPr.find(qn('w:cols'))
+    if cols is not None:
+        info['num_columns'] = cols.get(qn('w:num'))
+        info['column_space'] = cols.get(qn('w:space'))
+        info['column_sep'] = cols.get(qn('w:sep'))
+
+    # Page number settings
+    pgNumType = sectPr.find(qn('w:pgNumType'))
+    if pgNumType is not None:
+        info['page_numbering'] = {
+            'fmt': pgNumType.get(qn('w:fmt')),
+            'start': pgNumType.get(qn('w:start')),
+        }
+
+    # Line number settings
+    lnNumType = sectPr.find(qn('w:lnNumType'))
+    if lnNumType is not None:
+        info['line_numbering'] = {
+            'countBy': lnNumType.get(qn('w:countBy')),
+            'start': lnNumType.get(qn('w:start')),
+            'distance': lnNumType.get(qn('w:distance')),
+        }
+
+    # Page border
+    pgBorders = sectPr.find(qn('w:pgBorders'))
+    if pgBorders is not None:
+        info['page_borders'] = {}
+        for side in ['top', 'bottom', 'left', 'right']:
+            side_el = pgBorders.find(qn(f'w:{side}'))
+            if side_el is not None:
+                info['page_borders'][side] = {
+                    'val': side_el.get(qn('w:val')),
+                    'sz': side_el.get(qn('w:sz')),
+                    'color': side_el.get(qn('w:color')),
+                    'space': side_el.get(qn('w:space')),
+                }
+
+    # Title page
+    titlePg = sectPr.find(qn('w:titlePg'))
+    info['title_page'] = titlePg is not None
+
+    # Header reference
+    header_ref = sectPr.find(qn('w:headerReference'))
+    if header_ref is not None:
+        info['header_reference'] = {
+            'type': header_ref.get(qn('w:type')),
+            'id': header_ref.get(qn('r:id')),
+        }
+
+    # Footer reference
+    footer_ref = sectPr.find(qn('w:footerReference'))
+    if footer_ref is not None:
+        info['footer_reference'] = {
+            'type': footer_ref.get(qn('w:type')),
+            'id': footer_ref.get(qn('r:id')),
+        }
+
+    # Form protection
+    formProt = sectPr.find(qn('w:formProt'))
+    if formProt is not None:
+        info['form_protection'] = True
+
+    return info
+
+
+def get_header_footer_info(hf, hf_type, section_idx):
+    """Extract header or footer info."""
+    if hf is None:
+        return None
+
+    info = {}
+    info['type'] = hf_type
+    info['section'] = section_idx
+    info['paragraphs'] = []
+    info['tables'] = []
+
+    for para in hf.paragraphs:
+        info['paragraphs'].append(get_paragraph_info(para))
+
+    for idx, table in enumerate(hf.tables):
+        info['tables'].append(get_table_info(table, idx))
+
+    # Check for linked/linkedToPrevious
+    info['linked_to_previous'] = hf.is_linked_to_previous
+
+    return info
+
+
+# ============================================================
+# MAIN EXTRACTION
+# ============================================================
+
+output_lines = []
+def out(text=""):
+    output_lines.append(text)
+
+out("=" * 100)
+out("COMPREHENSIVE DOCX EXTRACTION REPORT")
+out("=" * 100)
+out(f"Source file: {INPUT_FILE}")
+out(f"Extraction date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+out("")
+
+# ── 1. DOCUMENT PROPERTIES ──
+out("-" * 80)
+out("1. DOCUMENT PROPERTIES")
+out("-" * 80)
+
+props = doc.core_properties
+out(f"  Title: {props.title}")
+out(f"  Author: {props.author}")
+out(f"  Category: {props.category}")
+out(f"  Comments: {props.comments}")
+out(f"  Content Status: {props.content_status}")
+out(f"  Created: {props.created}")
+out(f"  Identifier: {props.identifier}")
+out(f"  Keywords: {props.keywords}")
+out(f"  Language: {props.language}")
+out(f"  Last Modified By: {props.last_modified_by}")
+out(f"  Last Printed: {props.last_printed}")
+out(f"  Modified: {props.modified}")
+out(f"  Revision: {props.revision}")
+out(f"  Subject: {props.subject}")
+out(f"  Version: {props.version}")
+out("")
+
+# ── 2. SECTIONS / PAGE SETUP ──
+out("-" * 80)
+out("2. SECTIONS / PAGE SETUP")
+out("-" * 80)
+out(f"Number of sections: {len(doc.sections)}")
+out("")
+
+for i, section in enumerate(doc.sections):
+    out(f"  --- Section {i+1} ---")
+    sinfo = get_section_info(section)
+    out(f"  Page size: {sinfo['page_width']['cm']}cm x {sinfo['page_height']['cm']}cm ({sinfo['page_width']['inches']}\" x {sinfo['page_height']['inches']}\")")
+    out(f"  Orientation: {sinfo['orientation']}")
+    out(f"  Margins:")
+    out(f"    Top:    {sinfo['margins']['top']['cm']}cm")
+    out(f"    Bottom: {sinfo['margins']['bottom']['cm']}cm")
+    out(f"    Left:   {sinfo['margins']['left']['cm']}cm")
+    out(f"    Right:  {sinfo['margins']['right']['cm']}cm")
+    out(f"    Header distance: {sinfo['margins']['header']['cm']}cm")
+    out(f"    Footer distance: {sinfo['margins']['footer']['cm']}cm")
+    out(f"    Gutter: {sinfo['margins']['gutter']['cm']}cm")
+    if sinfo.get('num_columns'):
+        out(f"    Columns: {sinfo['num_columns']}, space: {sinfo.get('column_space')}")
+    if sinfo.get('page_numbering'):
+        out(f"    Page numbering: fmt={sinfo['page_numbering']['fmt']}, start={sinfo['page_numbering']['start']}")
+    if sinfo.get('page_borders'):
+        out(f"    Page borders: {sinfo['page_borders']}")
+    out(f"    Title page: {sinfo['title_page']}")
+    out("")
+
+# ── 3. HEADERS & FOOTERS ──
+out("-" * 80)
+out("3. HEADERS & FOOTERS")
+out("-" * 80)
+
+for i, section in enumerate(doc.sections):
+    out(f"  --- Section {i+1} ---")
+
+    # Header
+    header = section.header
+    if header:
+        hinfo = get_header_footer_info(header, 'header', i)
+        out(f"  HEADER (linked_to_previous: {hinfo['linked_to_previous']}):")
+        if hinfo['paragraphs']:
+            for p in hinfo['paragraphs']:
+                out(f"    Text: [{p['text']}]")
+                out(f"      Style: {p['style']}, Align: {p['alignment']}")
+                if p['runs']:
+                    for r in p['runs']:
+                        out(f"      Run: [{r['text']}] font={r.get('font_name')}, eastAsia={r.get('font_name_eastAsia')}, size={r.get('font_size')}pt, bold={r.get('bold')}, italic={r.get('italic')}")
+        else:
+            out(f"    (empty/no paragraphs)")
+
+        if hinfo['tables']:
+            out(f"    Header Tables: {len(hinfo['tables'])}")
+
+        # Also check for even/odd/first page headers via XML
+        sectPr = section._sectPr
+        for hdr_ref in sectPr.findall(qn('w:headerReference')):
+            out(f"    Header Reference: type={hdr_ref.get(qn('w:type'))}, id={hdr_ref.get(qn('r:id'))}")
+    else:
+        out(f"  HEADER: None")
+
+    # Footer
+    footer = section.footer
+    if footer:
+        finfo = get_header_footer_info(footer, 'footer', i)
+        out(f"  FOOTER (linked_to_previous: {finfo['linked_to_previous']}):")
+        if finfo['paragraphs']:
+            for p in finfo['paragraphs']:
+                out(f"    Text: [{p['text']}]")
+                out(f"      Style: {p['style']}, Align: {p['alignment']}")
+                if p['runs']:
+                    for r in p['runs']:
+                        out(f"      Run: [{r['text']}] font={r.get('font_name')}, eastAsia={r.get('font_name_eastAsia')}, size={r.get('font_size')}pt, bold={r.get('bold')}, italic={r.get('italic')}")
+        else:
+            out(f"    (empty/no paragraphs)")
+
+        if finfo['tables']:
+            out(f"    Footer Tables: {len(finfo['tables'])}")
+
+        # Also check for even/odd/first page footers via XML
+        sectPr = section._sectPr
+        for ftr_ref in sectPr.findall(qn('w:footerReference')):
+            out(f"    Footer Reference: type={ftr_ref.get(qn('w:type'))}, id={ftr_ref.get(qn('r:id'))}")
+    else:
+        out(f"  FOOTER: None")
+
+    out("")
+
+# ── 4. ALL PARAGRAPHS ──
+out("-" * 80)
+out("4. ALL PARAGRAPHS")
+out("-" * 80)
+out(f"Total paragraphs: {len(doc.paragraphs)}")
+out("")
+
+for i, para in enumerate(doc.paragraphs):
+    pinfo = get_paragraph_info(para)
+
+    out(f"  Paragraph {i}:")
+    out(f"    Text: [{pinfo['text']}]")
+    out(f"    Style: {pinfo['style']}")
+    out(f"    Alignment: {pinfo['alignment']}")
+    out(f"    First line indent: {pinfo['first_line_indent']}cm")
+    out(f"    Left indent: {pinfo['left_indent']}cm")
+    out(f"    Right indent: {pinfo['right_indent']}cm")
+    out(f"    Space before: {pinfo['space_before']}pt")
+    out(f"    Space after: {pinfo['space_after']}pt")
+    out(f"    Line spacing: {pinfo['line_spacing']} ({pinfo['line_spacing_rule']})")
+    out(f"    Keep with next: {pinfo['keep_with_next']}")
+    out(f"    Page break before: {pinfo['page_break_before']}")
+    out(f"    Widow control: {pinfo['widow_control']}")
+    if pinfo.get('outline_level') is not None:
+        out(f"    Outline level: {pinfo['outline_level']}")
+    if pinfo.get('numbering'):
+        out(f"    Numbering: numId={pinfo['numbering']['numId']}, level={pinfo['numbering']['ilvl']}")
+    if pinfo.get('borders'):
+        out(f"    Paragraph borders: {pinfo['borders']}")
+    if pinfo.get('shading'):
+        out(f"    Paragraph shading: {pinfo['shading']}")
+
+    # Runs
+    if pinfo['runs']:
+        out(f"    --- Runs ({len(pinfo['runs'])}):")
+        for j, r in enumerate(pinfo['runs']):
+            out(f"      Run {j}: [{r['text']}]")
+            out(f"        Font ASCII: {r.get('font_name')}")
+            out(f"        East Asian: {r.get('font_name_eastAsia')}")
+            out(f"        Size: {r.get('font_size')}pt")
+            out(f"        Bold: {r.get('bold')}, Italic: {r.get('italic')}, Underline: {r.get('underline')}")
+            out(f"        Color: {r.get('color')}")
+            out(f"        Strike: {r.get('strike')}")
+            out(f"        Superscript: {r.get('superscript')}")
+            out(f"        Subscript: {r.get('subscript')}")
+
+    # Hyperlinks
+    if pinfo.get('hyperlinks'):
+        out(f"    --- Hyperlinks:")
+        for hl in pinfo['hyperlinks']:
+            out(f"      Text: [{hl['text']}], rId: {hl.get('rId')}")
+
+    # Page break in run
+    if pinfo.get('has_page_break_in_run'):
+        out(f"    [Contains manual page break in run]")
+
+    out("")
+
+# ── 5. ALL TABLES ──
+out("-" * 80)
+out("5. ALL TABLES")
+out("-" * 80)
+out(f"Total tables: {len(doc.tables)}")
+out("")
+
+for i, table in enumerate(doc.tables):
+    tinfo = get_table_info(table, i)
+    out(f"  Table {i}:")
+    out(f"    Rows: {tinfo['rows']}, Columns: {tinfo['columns']}")
+    out(f"    Width: {tinfo.get('width')}")
+    out(f"    Alignment: {tinfo.get('alignment')}")
+    if tinfo.get('indent'):
+        out(f"    Indent: {tinfo['indent']}")
+
+    if tinfo.get('borders'):
+        out(f"    Borders:")
+        for side, bdata in tinfo['borders'].items():
+            out(f"      {side}: val={bdata['val']}, sz={bdata['sz']}, color={bdata['color']}, space={bdata['space']}")
+
+    if tinfo.get('default_cell_margins'):
+        out(f"    Default cell margins:")
+        for side, val in tinfo['default_cell_margins'].items():
+            out(f"      {side}: {val}pt")
+
+    if tinfo.get('tblLook'):
+        out(f"    Table style look: {tinfo['tblLook']}")
+
+    if tinfo.get('grid_cols'):
+        out(f"    Grid columns:")
+        for j, gc in enumerate(tinfo['grid_cols']):
+            out(f"      Col {j}: {gc['twip']} twips ({gc['cm']}cm)")
+
+    if tinfo.get('row_heights'):
+        out(f"    Row heights:")
+        for j, rh in enumerate(tinfo['row_heights']):
+            if rh:
+                out(f"      Row {j}: {rh['twip']} twips ({rh['cm']}cm / {rh['pt']}pt, rule={rh['hRule']})")
+            else:
+                out(f"      Row {j}: (auto)")
+
+    # Print all cells in a grid
+    out(f"    Cell data:")
+    for cell_info in tinfo['cells']:
+        r = cell_info['row']
+        c = cell_info['col']
+        text_preview = cell_info['text'][:100] + '...' if len(cell_info['text']) > 100 else cell_info['text']
+        out(f"      Cell [{r},{c}]: [{text_preview}]")
+
+        if cell_info.get('shading'):
+            sh = cell_info['shading']
+            out(f"        Shading: val={sh['val']}, color={sh['color']}, fill={sh['fill']}")
+
+        if cell_info.get('width'):
+            out(f"        Width: {cell_info['width']}")
+
+        if cell_info.get('vAlign'):
+            out(f"        VAlign: {cell_info['vAlign']}")
+
+        if cell_info.get('gridSpan'):
+            out(f"        GridSpan: {cell_info['gridSpan']}")
+
+        if cell_info.get('vMerge'):
+            out(f"        VMerge: {cell_info['vMerge']}")
+
+        if cell_info.get('textDirection'):
+            out(f"        TextDirection: {cell_info['textDirection']}")
+
+        if cell_info.get('cell_margins'):
+            out(f"        Cell margins: {cell_info['cell_margins']}")
+
+        # Cell paragraphs
+        for pi, p in enumerate(cell_info['paragraphs']):
+            out(f"        Para {pi}: Style={p['style']}, Align={p['alignment']}")
+            out(f"          Text: [{p['text'][:120]}]")
+            if p['runs']:
+                for ri, r in enumerate(p['runs']):
+                    out(f"          Run {ri}: [{r['text'][:80]}] font={r.get('font_name')}, eastAsia={r.get('font_name_eastAsia')}, size={r.get('font_size')}pt, bold={r.get('bold')}")
+
+    out("")
+
+# ── 6. SECTION STRUCTURE (headings) ──
+out("-" * 80)
+out("6. SECTION STRUCTURE (All Headings and Sub-headings)")
+out("-" * 80)
+out("")
+for i, para in enumerate(doc.paragraphs):
+    style_name = para.style.name if para.style else ""
+    if style_name.startswith("Heading") or style_name.startswith("heading"):
+        level = style_name.replace("Heading", "").replace("heading", "").strip()
+        indent = "  " * (int(level) if level.isdigit() else 1)
+        out(f"  {indent}[{style_name}] Paragraph {i}: {para.text}")
+    elif para.text.strip() and para.runs:
+        # Check if it's bold and large (might be a pseudo-heading)
+        first_run = para.runs[0]
+        if first_run.font.bold and first_run.font.size and first_run.font.size >= Pt(14):
+            out(f"  [BOLD/LARGE - possible heading] Paragraph {i}: {para.text}")
+out("")
+
+# ── 7. IMAGES / CHARTS ──
+out("-" * 80)
+out("7. IMAGES AND CHARTS")
+out("-" * 80)
+out("")
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+
+image_count = 0
+chart_count = 0
+
+# Check inline shapes in paragraphs
+for i, para in enumerate(doc.paragraphs):
+    # Check inline shapes (pictures)
+    for run in para.runs:
+        drawing = run._element.findall('.//' + qn('w:drawing'))
+        for d in drawing:
+            image_count += 1
+            # Try to get size info
+            extent = d.findall('.//' + qn('wp:extent'))
+            for ext in extent:
+                cx = ext.get('cx')
+                cy = ext.get('cy')
+                out(f"  Image {image_count}: Paragraph {i}")
+                out(f"    Extent: cx={cx} ({emu_to_cm(int(cx))}cm), cy={cy} ({emu_to_cm(int(cy))}cm)")
+
+            # Try to get image filename from relationships
+            blip = d.findall('.//' + qn('a:blip'))
+            for b in blip:
+                embed = b.get(qn('r:embed'))
+                if embed:
+                    try:
+                        rel = doc.part.rels[embed]
+                        out(f"    rId: {embed}, target: {rel.target_ref}")
+                    except:
+                        out(f"    rId: {embed}")
+
+            # Check for inline shape properties (wp:inline vs wp:anchor)
+            inline = d.findall('.//' + qn('wp:inline'))
+            anchor = d.findall('.//' + qn('wp:anchor'))
+            if inline:
+                out(f"    Placement: inline")
+            elif anchor:
+                out(f"    Placement: anchored")
+                for a in anchor:
+                    out(f"      Anchor: relativeHeight={a.get('relativeHeight')}, behindDoc={a.get('behindDoc')}")
+
+        # Check for charts (c:chart)
+        chart_elements = run._element.findall('.//' + qn('c:chart'))
+        for ce in chart_elements:
+            chart_count += 1
+            out(f"  Chart {chart_count}: Paragraph {i}")
+
+# Check also in tables
+for ti, table in enumerate(doc.tables):
+    for row in table.rows:
+        for cell in row.cells:
+            for para in cell.paragraphs:
+                for run in para.runs:
+                    drawing = run._element.findall('.//' + qn('w:drawing'))
+                    for d in drawing:
+                        image_count += 1
+                        extent = d.findall('.//' + qn('wp:extent'))
+                        for ext in extent:
+                            cx = ext.get('cx')
+                            cy = ext.get('cy')
+                            out(f"  Image {image_count}: Table {ti}")
+                            out(f"    Extent: cx={cx} ({emu_to_cm(int(cx))}cm), cy={cy} ({emu_to_cm(int(cy))}cm)")
+                        blip = d.findall('.//' + qn('a:blip'))
+                        for b in blip:
+                            embed = b.get(qn('r:embed'))
+                            if embed:
+                                out(f"    rId: {embed}")
+
+out(f"\n  Total images found: {image_count}")
+out(f"  Total charts found: {chart_count}")
+out("")
+
+# ── 8. LISTS / NUMBERING ──
+out("-" * 80)
+out("8. LISTS AND NUMBERING")
+out("-" * 80)
+out("")
+
+# Check for List Paragraph style or numbering
+list_count = 0
+for i, para in enumerate(doc.paragraphs):
+    style_name = para.style.name if para.style else ""
+    if "List" in style_name:
+        list_count += 1
+        out(f"  [{style_name}] Paragraph {i}: [{para.text}]")
+    else:
+        pPr = para._element.find(qn('w:pPr'))
+        if pPr is not None:
+            numPr = pPr.find(qn('w:numPr'))
+            if numPr is not None:
+                numId = numPr.find(qn('w:numId'))
+                ilvl = numPr.find(qn('w:ilvl'))
+                list_count += 1
+                out(f"  [Numbered/Bulleted] Paragraph {i}: numId={numId.get(qn('w:val')) if numId is not None else '?'}, level={ilvl.get(qn('w:val')) if ilvl is not None else '0'}")
+                out(f"    Text: [{para.text}]")
+
+if list_count == 0:
+    out("  (No list paragraphs found)")
+out("")
+
+# ── 9. STYLES SUMMARY ──
+out("-" * 80)
+out("9. DOCUMENT STYLES IN USE")
+out("-" * 80)
+out("")
+styles_used = set()
+for para in doc.paragraphs:
+    if para.style:
+        styles_used.add(para.style.name)
+for table in doc.tables:
+    for row in table.rows:
+        for cell in row.cells:
+            for para in cell.paragraphs:
+                if para.style:
+                    styles_used.add(para.style.name)
+
+out(f"  Styles found in document: {len(styles_used)}")
+for s in sorted(styles_used):
+    out(f"    - {s}")
+out("")
+
+# ── 10. XML RAW SNIPPETS (key structural elements) ──
+out("-" * 80)
+out("10. KEY XML RAW DATA")
+out("-" * 80)
+out("")
+
+# Check for footnotes/endnotes
+try:
+    footnotes_part = doc.part.package.part_related_by(RT.FOOTNOTES)
+    out(f"  Footnotes part found: {footnotes_part}")
+except:
+    out(f"  No footnotes found")
+
+try:
+    endnotes_part = doc.part.package.part_related_by(RT.ENDNOTES)
+    out(f"  Endnotes part found: {endnotes_part}")
+except:
+    out(f"  No endnotes found")
+
+# Check for comments
+try:
+    comments_part = doc.part.package.part_related_by(RT.COMMENTS)
+    out(f"  Comments part found: {comments_part}")
+except:
+    out(f"  No comments found")
+
+# Check for numbering definitions
+numbering_part = doc.part.numbering_part
+if numbering_part:
+    out(f"  Numbering definitions: present")
+
+out("")
+
+# ── FONT USAGE SUMMARY ──
+out("-" * 80)
+out("11. FONT USAGE SUMMARY")
+out("-" * 80)
+out("")
+fonts_used = set()
+sizes_used = set()
+for para in doc.paragraphs:
+    for run in para.runs:
+        if run.font.name:
+            fonts_used.add(run.font.name)
+        if run.font.size:
+            sizes_used.add(round(run.font.size / 12700, 1))
+
+for table in doc.tables:
+    for row in table.rows:
+        for cell in row.cells:
+            for para in cell.paragraphs:
+                for run in para.runs:
+                    if run.font.name:
+                        fonts_used.add(run.font.name)
+                    if run.font.size:
+                        sizes_used.add(round(run.font.size / 12700, 1))
+
+out(f"  Fonts used: {sorted(fonts_used)}")
+out(f"  Font sizes used (pt): {sorted(sizes_used)}")
+out("")
+
+# ── 12. BODY TEXT SUMMARY ──
+out("-" * 80)
+out("12. DOCUMENT BODY TEXT SUMMARY (all non-empty paragraphs)")
+out("-" * 80)
+out("")
+for i, para in enumerate(doc.paragraphs):
+    if para.text.strip():
+        style_name = para.style.name if para.style else ""
+        out(f"  [{style_name}] {para.text[:200]}")
+out("")
+
+# ── 13. NUMBERING DEFINITIONS (abstract numbering styles) ──
+out("-" * 80)
+out("13. NUMBERING DEFINITIONS")
+out("-" * 80)
+out("")
+try:
+    numbering = doc.part.numbering_part
+    if numbering:
+        num_xml = numbering._element
+        abstract_nums = num_xml.findall(qn('w:abstractNum'))
+        out(f"  Abstract numbering definitions: {len(abstract_nums)}")
+        for an in abstract_nums[:5]:  # show first 5
+            an_id = an.get(qn('w:abstractNumId'))
+            multiLevel = an.get(qn('w:multiLevelType'))
+            out(f"    abstractNumId={an_id}, multiLevelType={multiLevel}")
+        num_defs = num_xml.findall(qn('w:num'))
+        out(f"  Concrete numbering instances: {len(num_defs)}")
+        for nd in num_defs[:5]:
+            nd_id = nd.get(qn('w:numId'))
+            an_ref = nd.find(qn('w:abstractNumId'))
+            if an_ref is not None:
+                out(f"    numId={nd_id} -> abstractNumId={an_ref.get(qn('w:val'))}")
+except Exception as e:
+    out(f"  Could not extract numbering: {e}")
+out("")
+
+# ============================================================
+# WRITE TO FILE
+# ============================================================
+result = "\n".join(output_lines)
+
+with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+    f.write(result)
+
+print(f"\n{'=' * 60}")
+print(f"EXTRACTION COMPLETE!")
+print(f"Output saved to: {OUTPUT_FILE}")
+print(f"Total lines: {len(output_lines)}")
+print(f"Total paragraphs: {len(doc.paragraphs)}")
+print(f"Total tables: {len(doc.tables)}")
+print(f"Total sections: {len(doc.sections)}")
+print(f"{'=' * 60}")

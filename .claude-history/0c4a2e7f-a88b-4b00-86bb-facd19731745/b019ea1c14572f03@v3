@@ -1,0 +1,122 @@
+# -*- coding: utf-8 -*-
+"""
+故障率分析引擎 - 分类器
+
+封装所有 hex 判断逻辑：
+- 公辅系统识别（立磨等）
+- 计划性检修识别
+- 突发故障识别
+- 排除原因判断
+- 设备类型和产线号识别
+"""
+
+from . import config
+
+
+class Classifier:
+    """分类器 - 集中管理所有判断逻辑"""
+
+    @staticmethod
+    def hex_id(s: str) -> str:
+        """获取字符串的 UTF-8 十六进制标识"""
+        return s.encode('utf-8').hex()
+
+    # ---- 公辅系统 ----
+
+    def is_public_utility(self, factor: str) -> bool:
+        """判断影响因素是否为公辅系统（立磨等）"""
+        h = self.hex_id(factor)
+        for keyword in config.PUBLIC_UTILITY_FACTORS.values():
+            if keyword in h:
+                return True
+        return False
+
+    # ---- 计划性检修 vs 突发故障 ----
+
+    def is_planned_repair(self, factor: str) -> bool:
+        """判断是否为计划性检修活动（立磨窗口期趁机做的）"""
+        h = self.hex_id(factor)
+        for kw in config.PLANNED_REPAIR_KEYWORDS:
+            if kw in h:
+                return True
+        return False
+
+    def is_sudden_fault(self, factor: str) -> bool:
+        """判断是否为突发故障（即使发生在立磨日也不归入立磨）"""
+        h = self.hex_id(factor)
+        for kw in config.SUDDEN_FAULT_KEYWORDS:
+            if kw in h:
+                return True
+        return False
+
+    # ---- 排除判断 ----
+
+    def should_exclude(self, reason: str) -> bool:
+        """判断是否应排除该记录（生产组织/保障/车辆）"""
+        h = self.hex_id(reason)
+        for keyword in config.EXCLUDE_REASONS.values():
+            if h == keyword:
+                return True
+        for prefix in config.EXCLUDE_REASON_PREFIXES:
+            if prefix in h:
+                return True
+        return False
+
+    # ---- 计划性检修识别 ----
+
+    def is_planned_maintenance(self, reason: str) -> bool:
+        """判断是否为计划性检修（单独追踪，不计入故障率）"""
+        h = self.hex_id(reason)
+        for keyword in config.PLANNED_MAINTENANCE_REASONS.values():
+            if h == keyword:
+                return True
+        return False
+
+    # ---- 设备信息提取 ----
+
+    def get_equipment(self, system: str) -> str:
+        """从系统列提取设备类型（电炉/干燥/回窑）"""
+        h = self.hex_id(system)
+        for name, suffix in config.EQUIPMENT_PATTERNS.items():
+            if h.endswith(suffix):
+                return name
+        return "其他"
+
+    def get_line_number(self, system: str) -> int:
+        """从系统列提取产线编号"""
+        h = self.hex_id(system)
+        for line_num, prefix in config.LINE_PATTERNS.items():
+            if h.startswith(prefix):
+                return line_num
+        return 0
+
+    def is_dianlu(self, system: str) -> bool:
+        """判断是否为电炉设备"""
+        return self.get_equipment(system) == "电炉"
+
+    # ---- 综合分类（用于引擎） ----
+
+    def classify(self, factor: str, date_day: int, line_num: int,
+                 limo_days_by_line: dict) -> str:
+        """
+        对一条记录进行分类
+
+        返回:
+            "limo"      - 立磨/公辅影响
+            "own"       - 产线自身故障
+        """
+        if self.is_public_utility(factor):
+            return "limo"
+
+        # 检查该线该日是否有立磨事件
+        on_limo_day = date_day in limo_days_by_line.get(line_num, set())
+
+        if on_limo_day:
+            if self.is_sudden_fault(factor):
+                return "own"
+            elif self.is_planned_repair(factor):
+                return "limo"
+            else:
+                return "own"
+        else:
+            return "own"

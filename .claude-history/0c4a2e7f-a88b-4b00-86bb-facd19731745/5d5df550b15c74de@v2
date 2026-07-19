@@ -1,0 +1,41 @@
+# -*- coding: utf-8 -*-
+"""检查新Excel文件中分类关键词的hex编码"""
+import xlrd
+from collections import defaultdict
+
+wb = xlrd.open_workbook(r'D:\工作\装备能源\经营分析\2026年\影响作业率因素统计 2026.xls')
+sh = wb.sheet_by_index(0)
+datemode = wb.datemode
+
+# 检查2月份数据的关键列
+factors = set()
+reasons = set()
+for r in range(1, sh.nrows):
+    v = sh.cell_value(r, 0)
+    if isinstance(v, (int, float)) and v > 40000:
+        t = xlrd.xldate_as_tuple(v, datemode)
+        if t[1] == 2:  # 2月
+            factor = str(sh.cell_value(r, 4)).strip()
+            reason = str(sh.cell_value(r, 9)).strip()
+            if '立磨' in factor or not factor:
+                pass
+            factors.add(factor)
+            reasons.add(reason)
+
+print('=== 2月影响因素(包含立磨关键字的) ===')
+for f in sorted([f for f in factors if '立' in f or '磨' in f]):
+    h = f.encode('utf-8').hex()
+    print(f'  factor={f}')
+    print(f'  hex={h}')
+    print(f'  含e7ab8be7a3a8(立磨): {"e7ab8be7a3a8" in h}')
+    print()
+
+print('=== 2月所有影响原因 ===')
+for r in sorted(reasons):
+    h = r.encode('utf-8').hex()
+    print(f'  reason={r}')
+    print(f'  hex={h}')
+    print(f'  含e7949fe4baa7(生产): {"e7949fe4baa7" in h}')
+    print(f'  含e8aea1e58892(计划): {"e8aea1e58892" in h}')
+    print(f'  含e4bf9de99a9c(保障): {"e4bf9de99a9c" in h}')
+    print()

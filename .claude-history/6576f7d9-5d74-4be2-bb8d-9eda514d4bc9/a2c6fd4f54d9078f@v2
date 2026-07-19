@@ -1,0 +1,37 @@
+import os, sys, zipfile, tempfile, shutil, re
+sys.stdout.reconfigure(encoding='utf-8')
+
+path = r'D:\工作\装备能源\检修管理\2026年\年度大修\3#生产线\评审'
+fn = [f for f in os.listdir(path) if '2026.07.14' in f and '电炉' in f and f.endswith('.docx')][0]
+fp = os.path.join(path, fn)
+
+tmpdir = tempfile.mkdtemp()
+with zipfile.ZipFile(fp, 'r') as z:
+    z.extractall(tmpdir)
+
+docx_path = os.path.join(tmpdir, 'word', 'document.xml')
+with open(docx_path, 'r', encoding='utf-8') as f:
+    xml = f.read()
+
+# Extract all text between <w:t> tags with context for analysis
+all_texts = re.findall(r'<w:t[^>]*>[^<]*</w:t>', xml)
+
+# Build a readable representation by joining consecutive w:t text
+full_text = ''
+buffer = ''
+for t in re.finditer(r'<w:t[^>]*>([^<]*)</w:t>', xml):
+    buffer += t.group(1)
+
+# Find key sections
+sections = ['推荐理由', '提请审议', '责任划分', '联合报价', '印尼金川建设', 'Jinhuan']
+for s in sections:
+    idx = buffer.find(s)
+    if idx >= 0:
+        print(f'\n=== Found "{s}" at position {idx} ===')
+        # Show 300 chars context
+        start = max(0, idx - 50)
+        end = min(len(buffer), idx + 400)
+        ctx = buffer[start:end]
+        print(f'  {ctx}')
+    else:
+        print(f'\n=== "{s}" NOT FOUND ===')

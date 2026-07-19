@@ -1,0 +1,374 @@
+# -*- coding: utf-8 -*-
+"""
+WP????AI?????? - ?????
+"""
+from datetime import datetime
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import (
+    Column, Integer, String, Float, DateTime, Date, Text,
+    Boolean, ForeignKey, JSON
+)
+
+db = SQLAlchemy()
+
+
+
+# ============================================================
+# ??1: ????????? (??/?????)
+# ============================================================
+class OperationImpactFactor(db.Model):
+    """??????????"""
+    __tablename__ = "operation_impact_factors"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False, comment="??")
+    shift = Column(String(20), nullable=False, comment="??")
+    team = Column(String(50), nullable=False, comment="??")
+    system = Column(String(100), nullable=False, comment="??")
+    impact_factor = Column(String(200), nullable=False, comment="????")
+    start_time = Column(DateTime, comment="????")
+    end_time = Column(DateTime, comment="????")
+    impact_minutes = Column(Integer, default=0, comment="????(??)")
+    impact_type = Column(String(50), comment="????(??/??/??/??)")
+    cause_analysis = Column(Text, comment="????")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    faults = db.relationship("FaultStatistic", backref="impact_factor", lazy="dynamic")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "date": self.date.isoformat() if self.date else None,
+            "shift": self.shift,
+            "team": self.team,
+            "system": self.system,
+            "impact_factor": self.impact_factor,
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "impact_minutes": self.impact_minutes,
+            "impact_type": self.impact_type,
+            "cause_analysis": self.cause_analysis,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class FaultStatistic(db.Model):
+    """??????? (???????????/??)"""
+    __tablename__ = "fault_statistics"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    impact_factor_id = Column(Integer, ForeignKey("operation_impact_factors.id"), comment="????ID")
+    fault_category = Column(String(100), comment="????(??/??/??/??/??)")
+    fault_reason = Column(Text, comment="????")
+    is_repeated = Column(Boolean, default=False, comment="??????")
+    repeated_count = Column(Integer, default=0, comment="????????")
+    downtime_hours = Column(Float, default=0, comment="?????")
+    affected_production = Column(String(200), comment="??????")
+    analysis_report_path = Column(String(500), comment="??????")
+    week_of_year = Column(Integer, comment="??")
+    month_of_year = Column(Integer, comment="??")
+    year = Column(Integer, comment="??")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "impact_factor_id": self.impact_factor_id,
+            "fault_category": self.fault_category,
+            "fault_reason": self.fault_reason,
+            "is_repeated": self.is_repeated,
+            "repeated_count": self.repeated_count,
+            "downtime_hours": self.downtime_hours,
+            "affected_production": self.affected_production,
+            "analysis_report_path": self.analysis_report_path,
+        }
+
+
+
+# ============================================================
+# ??2: ??????
+# ============================================================
+class MaterialConsumption(db.Model):
+    """???????"""
+    __tablename__ = "material_consumptions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False, comment="??")
+    category = Column(String(50), nullable=False, comment="??(??/????/??)")
+    item_name = Column(String(200), nullable=False, comment="????")
+    specification = Column(String(200), comment="????")
+    quantity = Column(Float, default=0, comment="??")
+    unit = Column(String(20), comment="??")
+    unit_price = Column(Float, default=0, comment="??")
+    total_amount = Column(Float, default=0, comment="???")
+    warehouse = Column(String(100), comment="??")
+    department = Column(String(100), comment="??")
+    remark = Column(Text, comment="??")
+    created_at = Column(DateTime, default=datetime.now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "date": self.date.isoformat() if self.date else None,
+            "category": self.category,
+            "item_name": self.item_name,
+            "specification": self.specification,
+            "quantity": self.quantity,
+            "unit": self.unit,
+            "unit_price": self.unit_price,
+            "total_amount": self.total_amount,
+            "warehouse": self.warehouse,
+            "department": self.department,
+            "remark": self.remark,
+        }
+
+
+# ============================================================
+# ??3: ??????
+# ============================================================
+class EnergyConsumption(db.Model):
+    """???????"""
+    __tablename__ = "energy_consumptions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False, comment="????/??")
+    energy_type = Column(String(30), nullable=False, comment="????(?/??/??)")
+    consumption = Column(Float, default=0, comment="???")
+    unit = Column(String(20), comment="??(kWh/?/???)")
+    unit_price = Column(Float, default=0, comment="??")
+    total_cost = Column(Float, default=0, comment="???")
+    generation_amount = Column(Float, default=0, comment="???(???)")
+    consumption_per_unit = Column(Float, comment="??(??????)")
+    remark = Column(Text, comment="??")
+    created_at = Column(DateTime, default=datetime.now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "date": self.date.isoformat() if self.date else None,
+            "energy_type": self.energy_type,
+            "consumption": self.consumption,
+            "unit": self.unit,
+            "unit_price": self.unit_price,
+            "total_cost": self.total_cost,
+            "generation_amount": self.generation_amount,
+            "consumption_per_unit": self.consumption_per_unit,
+            "remark": self.remark,
+        }
+
+
+
+# ============================================================
+# ??4: ???????? (????)
+# ============================================================
+class InventoryTarget(db.Model):
+    """???????"""
+    __tablename__ = "inventory_targets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    year = Column(Integer, nullable=False, comment="??")
+    month = Column(Integer, comment="??")
+    category = Column(String(50), nullable=False, comment="??(??/??/???/??/??)")
+    target_amount = Column(Float, default=0, comment="????/??")
+    actual_amount = Column(Float, default=0, comment="????/??")
+    reduction_rate = Column(Float, comment="???(%)")
+    remark = Column(Text, comment="??")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "year": self.year,
+            "month": self.month,
+            "category": self.category,
+            "target_amount": self.target_amount,
+            "actual_amount": self.actual_amount,
+            "reduction_rate": self.reduction_rate,
+            "remark": self.remark,
+        }
+
+
+# ============================================================
+# ??5: ???????
+# ============================================================
+class InspectionIssue(db.Model):
+    """???????"""
+    __tablename__ = "inspection_issues"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    inspection_date = Column(Date, nullable=False, comment="????")
+    inspection_type = Column(String(100), comment="????(??/??/??/??)")
+    issue_description = Column(Text, nullable=False, comment="????")
+    location = Column(String(200), comment="??/??")
+    severity = Column(String(20), default="??", comment="????(??/??/??)")
+    image_paths = Column(JSON, comment="??????")
+    rectification_measure = Column(Text, comment="????")
+    responsible_person = Column(String(50), comment="???")
+    deadline = Column(Date, comment="????")
+    rectification_status = Column(String(20), default="???", comment="????(???/???/???)")
+    completion_date = Column(Date, comment="????")
+    is_closed = Column(Boolean, default=False, comment="????")
+    overdue_days = Column(Integer, default=0, comment="????")
+    remark = Column(Text, comment="??")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "inspection_date": self.inspection_date.isoformat() if self.inspection_date else None,
+            "inspection_type": self.inspection_type,
+            "issue_description": self.issue_description,
+            "location": self.location,
+            "severity": self.severity,
+            "image_paths": self.image_paths,
+            "rectification_measure": self.rectification_measure,
+            "responsible_person": self.responsible_person,
+            "deadline": self.deadline.isoformat() if self.deadline else None,
+            "rectification_status": self.rectification_status,
+            "completion_date": self.completion_date.isoformat() if self.completion_date else None,
+            "is_closed": self.is_closed,
+            "overdue_days": self.overdue_days,
+            "remark": self.remark,
+        }
+
+
+# ============================================================
+# ??6: ????
+# ============================================================
+class Project(db.Model):
+    """???????"""
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_name = Column(String(200), nullable=False, comment="????")
+    project_type = Column(String(50), comment="????(???????/????/??)")
+    total_investment = Column(Float, default=0, comment="???(??)")
+    completed_investment = Column(Float, default=0, comment="?????(??)")
+    completion_rate = Column(Float, comment="???(%)")
+    start_date = Column(Date, comment="????")
+    planned_end_date = Column(Date, comment="??????")
+    actual_end_date = Column(Date, comment="??????")
+    progress_description = Column(Text, comment="????")
+    existing_issues = Column(Text, comment="????")
+    next_week_plan = Column(Text, comment="????")
+    status = Column(String(20), default="???", comment="??(???/???/??/???)")
+    remark = Column(Text, comment="??")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "project_name": self.project_name,
+            "project_type": self.project_type,
+            "total_investment": self.total_investment,
+            "completed_investment": self.completed_investment,
+            "completion_rate": self.completion_rate,
+            "start_date": self.start_date.isoformat() if self.start_date else None,
+            "planned_end_date": self.planned_end_date.isoformat() if self.planned_end_date else None,
+            "actual_end_date": self.actual_end_date.isoformat() if self.actual_end_date else None,
+            "progress_description": self.progress_description,
+            "existing_issues": self.existing_issues,
+            "next_week_plan": self.next_week_plan,
+            "status": self.status,
+            "remark": self.remark,
+        }
+
+
+
+# ============================================================
+# ??7: ????
+# ============================================================
+class PerformanceAssessment(db.Model):
+    """?????"""
+    __tablename__ = "performance_assessments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    assessment_year = Column(Integer, nullable=False, comment="????")
+    assessment_month = Column(Integer, nullable=False, comment="????")
+    diesel_target = Column(Float, comment="???????")
+    diesel_actual = Column(Float, comment="???????")
+    diesel_reduction_rate = Column(Float, comment="?????(%)")
+    diesel_score = Column(Float, comment="??????")
+    fresh_water_target = Column(Float, comment="???????")
+    fresh_water_actual = Column(Float, comment="???????")
+    fresh_water_reduction_rate = Column(Float, comment="?????(%)")
+    fresh_water_score = Column(Float, comment="??????")
+    lubricant_target = Column(Float, comment="????????")
+    lubricant_actual = Column(Float, comment="????????")
+    lubricant_reduction_rate = Column(Float, comment="??????(%)")
+    lubricant_score = Column(Float, comment="???????")
+    spare_parts_reduction_rate = Column(Float, comment="?????(%)")
+    spare_parts_score = Column(Float, comment="??????")
+    material_reduction_rate = Column(Float, comment="?????(%)")
+    material_score = Column(Float, comment="??????")
+    outsourcing_count = Column(Integer, default=0, comment="??????")
+    outsourcing_amount = Column(Float, default=0, comment="??????")
+    outsourcing_saved = Column(Float, comment="????")
+    outsourcing_score = Column(Float, comment="??????")
+    equipment_special_score = Column(Float, comment="????????")
+    total_score = Column(Float, comment="??")
+    evaluation_opinion = Column(Text, comment="????")
+    report_path = Column(String(500), comment="??????")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "assessment_year": self.assessment_year,
+            "assessment_month": self.assessment_month,
+            "diesel_reduction_rate": self.diesel_reduction_rate,
+            "diesel_score": self.diesel_score,
+            "fresh_water_reduction_rate": self.fresh_water_reduction_rate,
+            "fresh_water_score": self.fresh_water_score,
+            "lubricant_reduction_rate": self.lubricant_reduction_rate,
+            "lubricant_score": self.lubricant_score,
+            "spare_parts_reduction_rate": self.spare_parts_reduction_rate,
+            "material_reduction_rate": self.material_reduction_rate,
+            "outsourcing_count": self.outsourcing_count,
+            "outsourcing_amount": self.outsourcing_amount,
+            "outsourcing_saved": self.outsourcing_saved,
+            "equipment_special_score": self.equipment_special_score,
+            "total_score": self.total_score,
+            "evaluation_opinion": self.evaluation_opinion,
+            "report_path": self.report_path,
+        }
+
+
+# ============================================================
+# ??8: AI??????
+# ============================================================
+class AiReviewRecord(db.Model):
+    """AI?????"""
+    __tablename__ = "ai_review_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    review_type = Column(String(50), nullable=False, comment="????(????/????/????)")
+    document_name = Column(String(200), comment="????")
+    document_path = Column(String(500), comment="????")
+    review_result = Column(JSON, comment="????JSON")
+    reason_analysis_ok = Column(Boolean, comment="????????")
+    measures_effective = Column(Boolean, comment="??????")
+    is_closed_loop = Column(Boolean, comment="??????")
+    has_repeated_fault = Column(Boolean, comment="????????")
+    ai_comment = Column(Text, comment="AI????")
+    created_at = Column(DateTime, default=datetime.now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "review_type": self.review_type,
+            "document_name": self.document_name,
+            "review_result": self.review_result,
+            "reason_analysis_ok": self.reason_analysis_ok,
+            "measures_effective": self.measures_effective,
+            "is_closed_loop": self.is_closed_loop,
+            "has_repeated_fault": self.has_repeated_fault,
+            "ai_comment": self.ai_comment,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }

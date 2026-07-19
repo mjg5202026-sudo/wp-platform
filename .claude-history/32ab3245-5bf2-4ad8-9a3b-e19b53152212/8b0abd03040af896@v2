@@ -1,0 +1,9 @@
+# -*- coding: utf-8 -*-
+"""Copy report to original template location"""
+import shutil, os
+
+src = 'D:\\soft\\work-flow\\wp-platform\\data\\reports\\2026年二季度生产经营绩效考核意见（EPR）20260705.docx'
+dst = 'D:\\工作\\装备能源\\绩效考核\\绩效考核\\2026年\\6月份\\印尼金川WP公司2026年二季度生产经营绩效考核意见（EPR）20260705.docx'
+
+shutil.copy2(src, dst)
+print(f"已写入: {dst}")

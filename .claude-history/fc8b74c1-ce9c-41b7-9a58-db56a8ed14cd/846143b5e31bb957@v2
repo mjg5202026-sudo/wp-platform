@@ -1,0 +1,68 @@
+# -*- coding: utf-8 -*-
+"""验证分类器是否正常工作 - 检查被排除、被分类的记录"""
+import sys
+sys.path.insert(0, r'D:\soft\work-flow\wp-platform')
+
+import xlrd
+from collections import defaultdict
+
+wb = xlrd.open_workbook(r'D:\工作\装备能源\经营分析\2026年\影响作业率因素统计 2026.xls')
+sh = wb.sheet_by_index(0)
+datemode = wb.datemode
+
+from backend.analysis.classifier import Classifier
+cls = Classifier()
+
+# 按原因统计
+reason_stats = defaultdict(lambda: {'count': 0, 'mins': 0, 'lines_4': 0})
+line4_stats = defaultdict(lambda: {'count': 0, 'mins': 0})
+
+for r in range(1, sh.nrows):
+    v = sh.cell_value(r, 0)
+    if isinstance(v, (int, float)) and v > 40000:
+        t = xlrd.xldate_as_tuple(v, datemode)
+        ln_str = str(sh.cell_value(r, 3)).strip()
+        reason = str(sh.cell_value(r, 9)).strip()
+        mins = sh.cell_value(r, 7)
+        if not isinstance(mins, (int, float)) or mins <= 0:
+            continue
+
+        line_num = cls.get_line_number(ln_str)
+
+        # 统计4#线
+        if line_num == 4:
+            line4_stats[reason]['count'] += 1
+            line4_stats[reason]['mins'] += mins
+            continue
+
+        if 1 <= line_num <= 3:
+            reason_stats[reason]['count'] += 1
+            reason_stats[reason]['mins'] += mins
+
+# 输出
+print('=== 4#线记录 ===')
+for r, s in sorted(line4_stats.items(), key=lambda x: -x[1]['mins']):
+    print(f'  reason={r}  {s["count"]}条  {s["mins"]:.0f}min')
+
+print()
+print('=== 1-3#线按原因统计 ===')
+total_mins = 0
+for r, s in sorted(reason_stats.items(), key=lambda x: -x[1]['mins']):
+    excluded = cls.should_exclude(r)
+    pm = cls.is_planned_maintenance(r)
+    tag = ''
+    if excluded: tag = ' [已排除]'
+    elif pm: tag = ' [计划检修]'
+    print(f'  reason={r}  {s["count"]}条  {s["mins"]:.0f}min{tag}')
+    total_mins += s['mins']
+print(f'  总计: {total_mins:.0f}min')
+
+print()
+print('=== 排除逻辑检查 ===')
+print(f'  should_exclude(e4bf9de99a9ce983a8/保障部): {cls.should_exclude("保障部")}')
+print(f'  should_exclude(e4bf9de99a9ce983a8e8bda6e8be86/保障部车辆): {cls.should_exclude("保障部车辆")}')
+print(f'  should_exclude(e7949fe4baa7e7bb84e7bb87/生产组织): {cls.should_exclude("生产组织")}')
+print(f'  is_planned_maintenance(e8aea1e58892e680a7e6a380e4bfae/计划性检修): {cls.is_planned_maintenance("计划性检修")}')
+print(f'  is_public_utility(e7ab8be7a3a8xxxx/立磨): {cls.is_public_utility("立磨堵煤抢修")}')
+print(f'  is_planned_repair(xxxx检修): {cls.is_planned_repair("设备检修")}')
+print(f'  is_sudden_fault(xxxx圆锥破): {cls.is_sudden_fault("圆锥破石头堵死")}')

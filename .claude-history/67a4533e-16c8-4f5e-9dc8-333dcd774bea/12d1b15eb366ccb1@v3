@@ -1,0 +1,226 @@
+import React, { useState, useEffect } from 'react'
+import { Card, Upload, Button, message, Table, Tag, Modal, Tabs, Statistic, Row, Col, Descriptions, Select, Space } from 'antd'
+import { UploadOutlined, InboxOutlined, DatabaseOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { uploadFile, getImpactFactors, getEnergyList } from '../api'
+
+const { Dragger } = Upload
+
+const TABLE_OPTIONS = [
+  { key: '', label: '自动识别', desc: '按文件名自动匹配表' },
+  { key: 'impact_factors', label: '影响作业率因素', desc: '故障/停机记录' },
+  { key: 'materials', label: '物资消耗', desc: '备件材料消耗' },
+  { key: 'energy', label: '能源消耗', desc: '电/柴油/新水数据' },
+]
+
+const DataCenter = () => {
+  // Upload state
+  const [uploading, setUploading] = useState(false)
+  const [resultModal, setResultModal] = useState({ open: false, result: null })
+  const [selectedTable, setSelectedTable] = useState('')
+
+  // Impact factors table
+  const [impactData, setImpactData] = useState([])
+  const [impactTotal, setImpactTotal] = useState(0)
+  const [impactPage, setImpactPage] = useState(1)
+
+  // Energy data table
+  const [energyData, setEnergyData] = useState([])
+  const [energyTotal, setEnergyTotal] = useState(0)
+  const [energyPage, setEnergyPage] = useState(1)
+
+  // Upload history
+  const [uploadHistory, setUploadHistory] = useState([
+    { key: '1', file: '影响作业率因素统计 2026.xls', time: '2026-06-15 10:17', table: 'operation_impact_factors', rows: 1746, status: 'ok' },
+  ])
+
+  const loadImpactData = () => {
+    getImpactFactors({ page: impactPage, per_page: 100 }).then(res => {
+      setImpactData(res.data.data)
+      setImpactTotal(res.data.total)
+    })
+  }
+
+  const loadEnergyData = () => {
+    getEnergyList({ page: energyPage, per_page: 100 }).then(res => {
+      setEnergyData(res.data.data)
+      setEnergyTotal(res.data.total)
+    })
+  }
+
+  useEffect(() => { loadImpactData() }, [impactPage])
+  useEffect(() => { loadEnergyData() }, [energyPage])
+
+  const handleUpload = async (file) => {
+    setUploading(true)
+    const formData = new FormData()
+    formData.append('file', file)
+    if (selectedTable) {
+      formData.append('table', selectedTable)
+    }
+    try {
+      const res = await uploadFile(formData)
+      setResultModal({ open: true, result: res.data })
+      if (res.data.status !== 'error') {
+        message.success(`导入成功: ${res.data.detail?.success || 0} 条`)
+        loadImpactData()
+        loadEnergyData()
+        setUploadHistory(prev => [{
+          key: Date.now().toString(),
+          file: file.name,
+          time: new Date().toLocaleString(),
+          table: res.data.detail?.table || '-',
+          rows: res.data.detail?.success || 0,
+          status: res.data.status,
+        }, ...prev])
+      }
+    } catch (e) {
+      message.error('上传失败: ' + (e.response?.data?.message || e.message))
+    }
+    setUploading(false)
+    return false
+  }
+
+  const impactColumns = [
+    { title: '日期', dataIndex: 'date', width: 90 },
+    { title: '班次', dataIndex: 'shift', width: 90 },
+    { title: '班组', dataIndex: 'team', width: 50 },
+    { title: '系统', dataIndex: 'system', width: 70 },
+    { title: '影响因素', dataIndex: 'impact_factor', ellipsis: true },
+    { title: '影响时间', dataIndex: 'impact_minutes', width: 80, render: v => (
+      <Tag color={v > 480 ? 'red' : v > 120 ? 'orange' : v > 60 ? 'blue' : 'default'}>{v}分钟</Tag>
+    )},
+    { title: '性质', dataIndex: 'impact_type', width: 60 },
+  ]
+
+  const historyColumns = [
+    { title: '文件名', dataIndex: 'file', ellipsis: true },
+    { title: '上传时间', dataIndex: 'time', width: 160 },
+    { title: '导入表', dataIndex: 'table', width: 180 },
+    { title: '导入行数', dataIndex: 'rows', width: 80 },
+    { title: '状态', dataIndex: 'status', width: 80, render: v => <Tag color={v === 'ok' ? 'green' : 'red'}>{v === 'ok' ? '成功' : '失败'}</Tag> },
+  ]
+
+  const tabItems = [
+    {
+      key: 'upload',
+      label: '上传数据',
+      children: (
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <span style={{ marginRight: 8, color: '#666' }}>目标表:</span>
+            <Select value={selectedTable} onChange={setSelectedTable} style={{ width: 280 }}>
+              {TABLE_OPTIONS.map(t => (
+                <Select.Option key={t.key} value={t.key}>{t.label} — {t.desc}</Select.Option>
+              ))}
+            </Select>
+            <span style={{ marginLeft: 12, color: '#999', fontSize: 12 }}>选择"自动识别"可按文件名自动匹配</span>
+          </div>
+          <Dragger
+            name="file" multiple={false} accept=".xlsx,.xls,.csv"
+            beforeUpload={handleUpload} showUploadList={false} disabled={uploading}
+          >
+            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+            <p className="ant-upload-text">点击或拖拽Excel文件到此区域上传</p>
+            <p className="ant-upload-hint">
+              支持 .xlsx .xls .csv 格式的Excel文件<br/>
+              可自动识别影响作业率统计 / 物资消耗 / 能源消耗 等表格
+            </p>
+          </Dragger>
+          <Card title="上传记录" size="small" style={{ marginTop: 16 }}>
+            <Table dataSource={uploadHistory} columns={historyColumns} rowKey="key" size="small" pagination={false} />
+          </Card>
+        </>
+      ),
+    },
+    {
+      key: 'impact',
+      label: '影响因素数据',
+      children: (
+        <Table
+          dataSource={impactData} columns={impactColumns} rowKey="id" size="small"
+          pagination={{ current: impactPage, total: impactTotal, pageSize: 100, onChange: p => setImpactPage(p) }}
+          scroll={{ x: 700 }}
+        />
+      ),
+    },
+    {
+      key: 'energy',
+      label: '能源消耗数据',
+      children: (
+        <Table
+          dataSource={energyData} columns={[
+            { title: '日期', dataIndex: 'date', width: 100 },
+            { title: '能源类型', dataIndex: 'energy_type', width: 80, render: v => <Tag color={v === '电' ? 'gold' : v === '柴油' ? 'green' : 'blue'}>{v}</Tag> },
+            { title: '消耗量', dataIndex: 'consumption', width: 100, render: (v, r) => `${v} ${r.unit || ''}` },
+            { title: '单价', dataIndex: 'unit_price', width: 80, render: v => `$${v}` },
+            { title: '总费用', dataIndex: 'total_cost', width: 100, render: v => `$${(v || 0).toFixed(2)}` },
+            { title: '发电量', dataIndex: 'generation_amount', width: 80, render: v => v ? `${v}kWh` : '-' },
+            { title: '单耗', dataIndex: 'consumption_per_unit', width: 60, render: v => v || '-' },
+          ]} rowKey="id" size="small"
+          pagination={{ current: energyPage, total: energyTotal, pageSize: 100, onChange: p => setEnergyPage(p) }}
+          scroll={{ x: 700 }}
+        />
+      ),
+    },
+    {
+      key: 'help',
+      label: '使用帮助',
+      children: (
+        <Card>
+          <Descriptions column={1} bordered size="small">
+            <Descriptions.Item label="支持格式">支持导入影响作业率因素统计、物资消耗、能源消耗等Excel文件</Descriptions.Item>
+            <Descriptions.Item label="自动识别">系统自动识别Excel表头并映射到对应字段（日期/班次/班组/系统 等）</Descriptions.Item>
+            <Descriptions.Item label="数据查询">导入后可在对应模块查看和分析数据（故障/能源/物资 等模块）</Descriptions.Item>
+            <Descriptions.Item label="文件格式">.xlsx (Excel 2007+) / .xls (Excel 97-2003) / .csv</Descriptions.Item>
+          </Descriptions>
+        </Card>
+      ),
+    },
+  ]
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <h2>数据中心</h2>
+        <p>Excel文件上传与自动入库</p>
+      </div>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col span={6}><Card size="small"><Statistic title="影响因素数" value={impactTotal} suffix="条" /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="物资消耗" value={0} suffix="条" /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="能源数据" value={energyTotal} suffix="条" /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="上传次数" value={uploadHistory.length} suffix="次" /></Card></Col>
+      </Row>
+
+      <Card>
+        <Tabs items={tabItems} />
+      </Card>
+
+      <Modal
+        title="导入结果"
+        open={resultModal.open}
+        onCancel={() => setResultModal({ open: false, result: null })}
+        footer={<Button onClick={() => setResultModal({ open: false, result: null })}>关闭</Button>}
+      >
+        {resultModal.result && (
+          <div>
+            <p>状态: <Tag color={resultModal.result.status === 'ok' ? 'green' : 'orange'}>{resultModal.result.status}</Tag></p>
+            <p>成功导入: <strong>{resultModal.result.detail?.success || 0}</strong></p>
+            {resultModal.result.detail?.errors?.length > 0 && (
+              <>
+                <p>错误数: {resultModal.result.detail.errors.length}</p>
+                <div style={{ maxHeight: 200, overflow: 'auto', fontSize: 12, color: '#999' }}>
+                  {resultModal.result.detail.errors.map((e, i) => (
+                    <p key={i}>? {e.row}: {e.message}</p>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
+export default DataCenter

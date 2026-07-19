@@ -1,0 +1,24 @@
+# -*- coding: utf-8 -*-
+"""Re-read production support dept report with clear labels"""
+import openpyxl
+
+path = 'D:\\工作\\装备能源\\绩效考核\\绩效考核\\2026年\\6月份\\生产保障部提质增效报表（6月）.xlsx'
+wb = openpyxl.load_workbook(path, data_only=True)
+ws = wb.active
+
+# Print all rows with column letters
+print(f"{'Row':5s}", end="")
+for c in range(1, 15):
+    print(f"Col{c:<8s}", end=" ")
+print()
+print("-"*120)
+
+for r in range(1, 30):
+    vals = []
+    for c in range(1, 15):
+        v = ws.cell(r, c).value
+        s = str(v)[:15] if v is not None else ""
+        vals.append(s)
+    print(f"R{r:<3d}: {' | '.join(vals):<100s}")
+
+wb.close()

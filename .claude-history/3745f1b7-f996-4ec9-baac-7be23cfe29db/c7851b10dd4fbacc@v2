@@ -1,0 +1,306 @@
+# -*- coding: utf-8 -*-
+"""Generate 印尼金川WP公司废铁销售询价文件 based on 回转窑耐材施工询价文件 template."""
+import zipfile
+import os
+import shutil
+import copy
+from xml.etree import ElementTree as ET
+
+OUT_DIR = r'C:\Users\dell\.claude\projects\d--soft-python-vscode-Daily-plan\generated_docx'
+TEMPLATE_DIR = r'C:\Users\dell\.claude\projects\d--soft-python-vscode-Daily-plan\docx_extract\询价文件'
+OUTPUT_FILE = r'D:\工作\装备能源\固定资产\废铁销售\印尼金川WP公司废铁销售询价文件.docx'
+
+W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+
+def q(tag):
+    return '{' + W_NS + '}' + tag
+
+def make_rpr(font='宋体', sz=21, bold=False, color=None, hint=None):
+    rpr = ET.SubElement(ET.Element(q('rPr')), q('rPr'))
+    # don't nest - create fresh
+    rpr_elem = ET.Element(q('rPr'))
+    rFonts = ET.SubElement(rpr_elem, q('rFonts'))
+    rFonts.set(q('ascii'), font)
+    rFonts.set(q('eastAsia'), font)
+    rFonts.set(q('hAnsi'), font)
+    rFonts.set(q('cs'), font)
+    if hint:
+        rFonts.set(q('hint'), hint)
+    if bold:
+        ET.SubElement(rpr_elem, q('b'))
+        ET.SubElement(rpr_elem, q('bCs'))
+    sz_elem = ET.SubElement(rpr_elem, q('sz'))
+    sz_elem.set(q('val'), str(sz))
+    szCs_elem = ET.SubElement(rpr_elem, q('szCs'))
+    szCs_elem.set(q('val'), str(sz+3 if sz <= 24 else sz))
+    if color:
+        c_elem = ET.SubElement(rpr_elem, q('color'))
+        c_elem.set(q('val'), color)
+    lang = ET.SubElement(rpr_elem, q('lang'))
+    lang.set(q('eastAsia'), 'zh-CN')
+    return rpr_elem
+
+def make_run(text, font='宋体', sz=21, bold=False, color=None, hint=None):
+    r = ET.Element(q('r'))
+    rpr = make_rpr(font, sz, bold, color, hint)
+    r.append(rpr)
+    t = ET.SubElement(r, q('t'))
+    t.text = text
+    t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+    return r
+
+def make_paragraph(text, font='宋体', sz=21, bold=False, jc=None, first_line_indent=None, spacing_before=None, spacing_after=None, color=None):
+    p = ET.Element(q('p'))
+    pPr = ET.SubElement(p, q('pPr'))
+
+    if jc:
+        jc_elem = ET.SubElement(pPr, q('jc'))
+        jc_elem.set(q('val'), jc)
+
+    if first_line_indent:
+        ind = ET.SubElement(pPr, q('ind'))
+        ind.set(q('firstLine'), str(first_line_indent))
+
+    if spacing_before is not None or spacing_after is not None:
+        spacing = ET.SubElement(pPr, q('spacing'))
+        if spacing_before is not None:
+            spacing.set(q('before'), str(spacing_before))
+        if spacing_after is not None:
+            spacing.set(q('after'), str(spacing_after))
+
+    if text:
+        run = make_run(text, font, sz, bold, color)
+        p.append(run)
+    return p
+
+def make_section_props():
+    """Create section properties with A4 page size."""
+    sectPr = ET.Element(q('sectPr'))
+    pgSz = ET.SubElement(sectPr, q('pgSz'))
+    pgSz.set(q('w'), '11906')  # A4 width
+    pgSz.set(q('h'), '16838')  # A4 height
+    pgMar = ET.SubElement(sectPr, q('pgMar'))
+    pgMar.set(q('top'), '1440')    # 1 inch
+    pgMar.set(q('right'), '1440')
+    pgMar.set(q('bottom'), '1440')
+    pgMar.set(q('left'), '1440')
+    pgMar.set(q('header'), '720')
+    pgMar.set(q('footer'), '720')
+    return sectPr
+
+
+def build_document():
+    """Build the complete document body."""
+    children = []
+
+    # ===== TITLE =====
+    children.append(make_paragraph('', font='Arial', sz=36))
+    children.append(make_paragraph('废铁销售询价文件', font='Arial', sz=44, bold=True, jc='center'))
+    children.append(make_paragraph('', font='Arial', sz=36))
+
+    # ===== 致 =====
+    children.append(make_paragraph('致：', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('印尼金川建设有限公司', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 引言 =====
+    intro = '根据印尼金川WP公司年度废旧物资管理工作计划及废铁销售需求，我司拟组织实施印尼金川WP公司废铁销售项目。现本着公平、公正、择优的原则，诚邀贵单位参与本项目废铁销售询价工作，望贵单位凭借专业的经营资质、成熟的采购经验及完善的服务体系积极响应。现将本项目相关信息、销售要求及报价事宜明确如下：'
+    children.append(make_paragraph(intro, font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 一、项目概况 =====
+    children.append(make_paragraph('一、项目概况', font='宋体', sz=24, bold=True))
+
+    children.append(make_paragraph('1.项目名称：印尼金川WP公司废铁销售项目。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('2.项目地点：印度尼西亚北马鲁古省南哈马黑拉县奥比岛。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('3.销售规模：主要包括冶炼厂改造及日常检修产生的废钢、废旧钢结构、报废设备拆解废钢等，具体销售内容以《销售清单》为准。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 二、销售范围及内容 =====
+    children.append(make_paragraph('二、销售范围及内容', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('1.销售范围：印尼金川WP公司废铁（包括冶炼厂改造后的废钢、废旧铁结构及公司报废钢材）。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('2.销售数量：以实际过磅计量为准，详见本邀请函《销售清单》。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('3.提货期限：具体提货开始日期以我公司书面通知为准，贵公司需根据通知及时安排运输车辆及人员，确保按期完成提货。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('4.运输方式：废铁集中至WP公司指定区域，由WP公司负责场内装车及陆路运输至码头，海运由购买方负责，运输费用及相关风险由购买方承担。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 三、资格要求 =====
+    children.append(make_paragraph('三、资格要求', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('1.本次询价要求报价人具备：须具有独立法人资格的废铁回收、销售或相关经营资质的单位。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('2.资质要求：须具备行政主管部门核发的有效营业执照（经营范围涵盖废旧物资回收或金属材料销售等相关内容）。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('3.财务要求：具有良好的银行资信和商业信誉，需要提供近三年的财务报表或资信证明。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('4.业绩要求：近3年具有废铁回收或金属材料采购相关业绩（2023年1月1日~2025年12月31日，以合同签订时间为准）。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('5.信誉要求：2023年1月1日~2025年12月31日（近3年）没有与骗取合同有关的犯罪或严重违法行为而引起的诉讼和仲裁；申请人在最近三年内不曾在任何合同中违约或被逐或因任何原因而使任何合同被解除。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('6.税务要求：具有依法纳税记录，能够开具合规的增值税发票。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('7.其他要求：购买方应充分考虑印尼当地法律法规要求，具备在印尼合法经营及运输的相关手续和能力。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 四、评审办法 =====
+    children.append(make_paragraph('四、评审办法', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('1.本次询价先进行资格符合性审查，资格审查合格后方可进入详细评审。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('2.详细评审采用最高价法：在满足资格条件的前提下，报价最高者中标。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('3.如出现最高报价相同的情况，由评审小组根据报价人的业绩、信誉、运输方案等因素综合评定确定中标单位。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 五、销售清单 =====
+    children.append(make_paragraph('五、销售清单', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('（一）销售范围说明：', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('本次废铁销售主要包括以下类别：', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('1.冶炼厂设备改造拆除产生的废钢；', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('2.废旧钢结构及建筑废钢；', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('3.报废设备拆解形成的废钢材料；', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('4.日常检修产生的废旧钢材。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('（二）计量方式：以印尼金川WP公司地磅实际过磅重量为准。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('（三）提货方式：购买方自提。废铁由WP公司负责集中堆放至指定区域，购买方负责装车、运输及清场。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 六、报价要求 =====
+    children.append(make_paragraph('六、报价要求', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('1.报价方式：按每吨单价报价（印尼盾/吨），报价应为含税价（含增值税）。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('2.报价货币：印度尼西亚盾（Rp）。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('3.报价应包含废铁回收、装卸、运输、税费及利润等全部费用。WP公司仅负责陆运至码头，海运及相关费用由购买方承担。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('4.报价人在报价时应充分考虑印尼当地市场行情、运输成本、汇率波动等因素，合理报价。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('5.本次报价为最终报价，不接受二次报价调整。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 七、合同主要条款 =====
+    children.append(make_paragraph('七、合同主要条款', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('1.合同期限：建议合同期限为6个月或1年，根据合作情况续签。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('2.付款方式：购买方需先支付预付款，最终货款按实际过磅重量结算，并须在船舶离开WP公司码头前完成全部付款。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('3.履约保证金：合同价款的2%，以银行保函形式提交。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('4.违约责任：如购买方未按期完成提货或未按时付款，WP公司有权扣除履约保证金并解除合同。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('5.废铁销售应具备完整的管理文件，包括交接记录、出库单、运输单据、发票等相关资料。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 八、报价文件格式 =====
+    children.append(make_paragraph('八、报价文件格式', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('（项目名称）', font='宋体', sz=21, jc='center'))
+    children.append(make_paragraph('报价文件', font='宋体', sz=28, bold=True, jc='center'))
+    children.append(make_paragraph('', font='宋体', sz=21))
+    children.append(make_paragraph('报价单位：                              （盖单位章）', font='宋体', sz=21))
+    children.append(make_paragraph('法定代表人或其委托代理人：                （签字）', font='宋体', sz=21))
+    children.append(make_paragraph('         年          月          日', font='宋体', sz=21, jc='center'))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # (一) 报价函
+    children.append(make_paragraph('（一）报价函', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('', font='宋体', sz=21))
+    children.append(make_paragraph('（询价人名称）：', font='宋体', sz=21))
+    children.append(make_paragraph('1.我方已仔细研究了印尼金川WP公司废铁销售询价文件的全部内容，愿意以每吨印尼盾（Rp_________）的报价参与本次废铁销售，提货期限_________日历天。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('2.我方承诺严格按合同约定实施和完成废铁收购、运输及清场工作。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('3.我方承诺本报价文件中的所有资料真实有效。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+    children.append(make_paragraph('报价人：                    （盖单位章）', font='宋体', sz=21))
+    children.append(make_paragraph('法定代表人或其委托代理人：         （签字）', font='宋体', sz=21))
+    children.append(make_paragraph('地址：', font='宋体', sz=21))
+    children.append(make_paragraph('电话：', font='宋体', sz=21))
+    children.append(make_paragraph('         年          月          日', font='宋体', sz=21))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # (二) 报价表
+    children.append(make_paragraph('（二）报价表', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('', font='宋体', sz=21))
+    children.append(make_paragraph('印尼金川WP公司废铁销售报价表', font='宋体', sz=21, jc='center'))
+    children.append(make_paragraph('', font='宋体', sz=21))
+    children.append(make_paragraph('序号  类别                      报价单价（Rp/吨）  备注', font='宋体', sz=21))
+    children.append(make_paragraph('1     冶炼厂改造废钢              _____________', font='宋体', sz=21))
+    children.append(make_paragraph('2     废旧钢结构                  _____________', font='宋体', sz=21))
+    children.append(make_paragraph('3     报废设备拆解废钢            _____________', font='宋体', sz=21))
+    children.append(make_paragraph('4     日常检修废旧钢材            _____________', font='宋体', sz=21))
+    children.append(make_paragraph('', font='宋体', sz=21))
+    children.append(make_paragraph('备注：以上报价均为含税价（含增值税）。', font='宋体', sz=21))
+    children.append(make_paragraph('报价有效期：自报价之日起30日历天。', font='宋体', sz=21))
+    children.append(make_paragraph('付款条件：先款后货，货款结清后放货。', font='宋体', sz=21))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 九、报价截止时间 =====
+    children.append(make_paragraph('九、报价截止时间', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('1.提交截止时间：2026年7月15日。逾期提交的报价文件视为无效，不予受理。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('2.提交方式：电子版文件同步发送至指定邮箱。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 十、其他说明 =====
+    children.append(make_paragraph('十、其他说明', font='宋体', sz=24, bold=True))
+    children.append(make_paragraph('1.甲方有权对各报价单位的资质、业绩、报价方案等内容进行综合评审，择优确定合作单位，且无需对未中标单位作出解释。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('2.贵单位提交的所有报价资料均需真实有效，若存在虚假资质、虚假业绩、虚报报价等情况，一经查实，立即取消参选资格，列入甲方合作黑名单。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('3.本询价文件仅为项目询价依据，不作为最终销售合同，最终合作条款以双方正式签订的销售合同为准。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('4.贵单位收到本询价函后，无论是否参与报价，均请及时与我方对接反馈。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('5.废铁交易、税务及财务核算应符合印尼有关法律法规。', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+    children.append(make_paragraph('', font='宋体', sz=21))
+
+    # ===== 联系人 =====
+    children.append(make_paragraph('联系人：刘彩霞', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('联系电话：13830587721', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('邮    箱：892350096@qq.com', font='宋体', sz=21, first_line_indent=420))
+    children.append(make_paragraph('', font='宋体', sz=21))
+    children.append(make_paragraph('', font='宋体', sz=21))
+    children.append(make_paragraph('发函单位：印尼金川WP公司', font='宋体', sz=21, jc='right'))
+    children.append(make_paragraph('发函日期：2026年7月1日', font='宋体', sz=21, jc='right'))
+
+    # Build body
+    body = ET.Element(q('body'))
+    for child in children:
+        body.append(child)
+    body.append(make_section_props())
+
+    return body
+
+
+def create_docx():
+    # Create output directory
+    if os.path.exists(OUT_DIR):
+        shutil.rmtree(OUT_DIR)
+
+    # Copy template files (styles, settings, relationships, etc.)
+    shutil.copytree(TEMPLATE_DIR, OUT_DIR)
+
+    # Remove old document.xml
+    doc_xml_path = os.path.join(OUT_DIR, 'word', 'document.xml')
+    if os.path.exists(doc_xml_path):
+        os.remove(doc_xml_path)
+
+    # Register namespaces
+    ET.register_namespace('w', W_NS)
+    ET.register_namespace('r', R_NS)
+    ET.register_namespace('mc', 'http://schemas.openxmlformats.org/markup-compatibility/2006')
+    ET.register_namespace('w14', 'http://schemas.microsoft.com/office/word/2010/wordml')
+    ET.register_namespace('w15', 'http://schemas.microsoft.com/office/word/2012/wordml')
+    ET.register_namespace('w16cex', 'http://schemas.microsoft.com/office/word/2018/wordml/cex')
+    ET.register_namespace('w16cid', 'http://schemas.microsoft.com/office/word/2016/wordml/cid')
+    ET.register_namespace('w16', 'http://schemas.microsoft.com/office/word/2018/wordml')
+    ET.register_namespace('w16sdtdh', 'http://schemas.microsoft.com/office/word/2020/wordml/sdtdatahash')
+    ET.register_namespace('w16se', 'http://schemas.microsoft.com/office/word/2015/wordml/symex')
+
+    # Build document
+    document = ET.Element('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}document')
+    document.set('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}mc:Ignorable', 'w14 w15 w16se w16cid w16 w16cex w16sdtdh')
+
+    body = build_document()
+    document.append(body)
+
+    # Write XML
+    tree = ET.ElementTree(document)
+    tree.write(doc_xml_path, xml_declaration=True, encoding='UTF-8')
+
+    # Create the docx file (zip)
+    docx_dir = os.path.dirname(OUTPUT_FILE)
+    if not os.path.exists(docx_dir):
+        os.makedirs(docx_dir)
+
+    if os.path.exists(OUTPUT_FILE):
+        os.remove(OUTPUT_FILE)
+
+    with zipfile.ZipFile(OUTPUT_FILE, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(OUT_DIR):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, OUT_DIR)
+                zf.write(file_path, arcname)
+
+    print('SUCCESS: Created ' + OUTPUT_FILE)
+    print('File size: %d bytes' % os.path.getsize(OUTPUT_FILE))
+
+if __name__ == '__main__':
+    create_docx()

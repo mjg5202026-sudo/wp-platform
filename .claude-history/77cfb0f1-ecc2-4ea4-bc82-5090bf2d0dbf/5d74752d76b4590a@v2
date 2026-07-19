@@ -1,0 +1,14 @@
+import openpyxl
+path = r"D:\工作\项目资料\码头堆棚改造\费用结算\码头堆棚施工领料明细(2026年4月1日更新).xlsx"
+wb = openpyxl.load_workbook(path, data_only=True)
+
+# Print all sheet names with row counts
+for name in wb.sheetnames:
+    ws = wb[name]
+    print(f"\n=== {name} === (rows={ws.max_row}, cols={ws.max_column})")
+    # Print first 5 rows
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=min(5, ws.max_row), values_only=True), 1):
+        vals = [str(v)[:30] if v is not None else "" for v in row]
+        non_empty = [v for v in vals if v]
+        if non_empty:
+            print(f"  R{i}: {' | '.join(non_empty)}")

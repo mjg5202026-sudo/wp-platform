@@ -1,0 +1,31 @@
+# -*- coding: utf-8 -*-
+"""Read June energy PDF and Q2 template"""
+import pdfplumber, re, sys, os
+sys.path.insert(0, 'D:\\soft\\work-flow\\wp-platform')
+
+# === 1. June energy PDF ===
+pdf_path = 'D:\\工作\\装备能源\\绩效考核\\绩效考核\\2026年\\6月份\\WP公司能源消耗统计表（2026年6月）(1).pdf'
+pdf = pdfplumber.open(pdf_path)
+print(f"=== 6月能源PDF ({len(pdf.pages)}页) ===")
+for i, page in enumerate(pdf.pages):
+    text = page.extract_text() or ""
+    print(f"\n--- 第{i+1}页 ---")
+    print(text[:300])
+    tables = page.extract_tables()
+    for ti, tbl in enumerate(tables):
+        if tbl and len(tbl) > 2:
+            print(f"\n  表格{ti+1}: {len(tbl)}行")
+            for ri, row in enumerate(tbl[:8]):
+                print(f"    R{ri}: {[str(c)[:25] if c else '' for c in row]}")
+pdf.close()
+
+# === 2. Q2 EPR template ===
+from docx import Document
+doc_path = 'D:\\工作\\装备能源\\绩效考核\\绩效考核\\2026年\\6月份\\印尼金川WP公司2026年二季度生产经营绩效考核意见（EPR）20260705.docx'
+doc = Document(doc_path)
+print(f"\n\n=== Q2 EPR模板 ({len(doc.paragraphs)}段落) ===")
+for i, p in enumerate(doc.paragraphs):
+    t = p.text.strip()
+    if t and len(t) > 5:
+        print(f"P{i}: {t[:150]}")
+print(f"\n表格数: {len(doc.tables)}")

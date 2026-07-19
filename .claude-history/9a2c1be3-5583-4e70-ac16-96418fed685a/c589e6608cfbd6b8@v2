@@ -1,0 +1,157 @@
+import os, sys, zipfile, tempfile, shutil, re
+sys.stdout.reconfigure(encoding='utf-8')
+
+path = r'D:\工作\装备能源\检修管理\2026年\年度大修\3#生产线\评审'
+fn = [f for f in os.listdir(path) if '2026.07.14' in f and '电炉' in f and f.endswith('.docx')][0]
+fp = os.path.join(path, fn)
+
+tmpdir = tempfile.mkdtemp()
+with zipfile.ZipFile(fp, 'r') as z:
+    z.extractall(tmpdir)
+
+docx_path = os.path.join(tmpdir, 'word', 'document.xml')
+with open(docx_path, 'r', encoding='utf-8') as f:
+    xml = f.read()
+
+# ============ CHANGES ============
+
+changes = []
+
+# 1) Fix recommendation header
+c1 = xml.find('推荐印尼金川建设有限公司为3#、1#电炉耐材施工单位')
+if c1 >= 0:
+    xml = xml.replace(
+        '推荐印尼金川建设有限公司为3#、1#电炉耐材施工单位',
+        '推荐PT GIOK EMAS TEKNIK（PT.GET）为3#、1#电炉耐材施工单位'
+    )
+    changes.append('recommendation header')
+
+# 2) Fix Reason 1 - keep as is (already mentions PT GET and 4# EF experience)
+
+# 3) Fix Reason 2 - remove remnants about 责任划分 and JK3
+# Find text between reason 1 end and reason 3 start
+for target in [
+    '但PT GIOK EMAS TEKNIK（PT.GET），责任划分相对复杂，且PT.GET的JK3工业安全认证尚在申办中，存在一定履约风险。',
+    '责任划分相对复杂，且PT.GET的JK3工业安全认证尚在申办中，存在一定履约风险。',
+    'PT.GET的JK3工业安全认证尚在申办中，存在一定履约风险。',
+]:
+    if target in xml:
+        xml = xml.replace(target, '印尼金川建设有限公司报价238.80万元/台，略高于PT GIOK EMAS TEKNIK（PT.GET），且无电炉耐材施工业绩。')
+        changes.append('reason 2 - replaced risk text')
+        break
+
+# Also handle if there are remnants like "略低于印尼金川建设有限公司，但"
+rem_targets = [
+    '略低于印尼金川建设有限公司，但2.',
+    '，但2.',
+]
+for t in rem_targets:
+    if t in xml:
+        xml = xml.replace(t, '。2.')
+        changes.append(f'removed remnant: {t}')
+
+# 4) Fix Reason 3 -> turn into Reason 2 about JK3
+old_reason3 = '3. 印尼金川建设有限公司作为集团内部企业，在施工协调、工期保障、安全管控及后期服务方面具有天然优势。'
+new_reason2 = '2. 建议在合同签订前，明确要求PT GIOK EMAS TEKNIK（PT.GET）完善JK3工业安全认证等相关手续，确保施工合规性。'
+if old_reason3 in xml:
+    xml = xml.replace(old_reason3, new_reason2)
+    changes.append('reason 3 -> 2')
+
+# 5) Fix approval section (Chinese)
+for old_app in [
+    '同意推荐印尼金川建设有限公司为合作单位，两台电炉全费用报价合计477.60万元（含税）。若会议认为需要进一步压降费用，可继续与两家单位进行价格谈判。会后',
+    '同意推荐印尼金川建设有限公司为合作单位，两台电炉全费用报价合计477.60万元（含税）。会后',
+    '同意推荐印尼金川建设有限公司为合作单位，两台电炉全费用报价合计477.60万元（含税）',
+]:
+    if old_app in xml:
+        new_app = '同意推荐PT GIOK EMAS TEKNIK（PT.GET）为合作单位，两台电炉全费用报价合计474.14万元（含税）。会后'
+        xml = xml.replace(old_app, new_app)
+        changes.append('approval section')
+        break
+
+# 6) Fix English recommendation
+xml = xml.replace(
+    'Jinhuan Construction Indonesia Co., Ltd. sebagai kontraktor terpilih',
+    'PT GIOK EMAS TEKNIK（PT.GET）sebagai kontraktor terpilih'
+)
+changes.append('English recommendation')
+
+# 7) Fix English approval amount
+xml = xml.replace('4.776.000', '4.741.400')
+changes.append('English amount')
+
+# 8) Add analysis about 4# experience
+old_analysis = '两家单位最终报价均低于4#电炉实际总费用，价格合理。'
+new_analysis = '两家单位最终报价均低于4#电炉实际总费用，价格合理。PT GIOK EMAS TEKNIK（PT.GET）曾成功实施4#电炉砌筑施工，质量、工期、组织等均比较到位，经验优势明显。'
+if old_analysis in xml:
+    xml = xml.replace(old_analysis, new_analysis)
+    changes.append('analysis text')
+
+# 9) Fix the "2." numbering if duplicated (reason 2 then reason 2)
+# If we have "。2.2." fix to "。2."
+if '。2.2.' in xml:
+    xml = xml.replace('。2.2.', '。2.')
+    changes.append('fixed double numbering')
+
+# 10) Fix any remaining 印尼金川建设 in recommendation context
+# Only in 推荐意见 section, not in 报价 section
+rec_idx = xml.find('推荐理由如下')
+app_idx = xml.find('提请审议的事项')
+if rec_idx >= 0 and app_idx >= 0:
+    rec_section = xml[rec_idx:app_idx]
+    # In this section, replace remaining 印尼金川建设有限公司 (not already fixed)
+    rec_section = rec_section.replace('印尼金川建设有限公司', 'PT GIOK EMAS TEKNIK（PT.GET）')
+    xml = xml[:rec_idx] + rec_section + xml[app_idx:]
+    changes.append('remaining references in recommendation section')
+
+# 11) Fix approval text
+old_double = '。建议审定3#、1#电炉耐材施工项目竞争性谈判结果，同意推荐PT GIOK EMAS TEKNIK（PT.GET）为合作单位，两台电炉全费用报价合计474.14万元（含税）。会后按相关规定推进合同签订工作。'
+if '同意推荐PT GIOK EMAS TEKNIK' in xml:
+    # Check if there are two approval sentences
+    if xml.count('同意推荐PT GIOK EMAS TEKNIK') > 1:
+        # Find the first and remove the duplicate
+        first = xml.find('同意推荐PT GIOK EMAS TEKNIK')
+        second = xml.find('同意推荐PT GIOK EMAS TEKNIK', first + 10)
+        if second >= 0:
+            # Find where this sentence ends
+            end = xml.find('。', second)
+            if end >= 0:
+                # Remove the duplicate sentence portion
+                xml = xml[:second] + xml[end+1:]
+                changes.append('removed duplicate approval')
+
+# ============ FINAL CHECKS ============
+with open(docx_path, 'w', encoding='utf-8') as f:
+    f.write(xml)
+
+# Repack
+with zipfile.ZipFile(fp, 'w', zipfile.ZIP_DEFLATED) as zout:
+    for root, dirs, files in os.walk(tmpdir):
+        for file in files:
+            zout.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), tmpdir))
+
+shutil.rmtree(tmpdir)
+
+# Verify
+from docx import Document
+doc = Document(fp)
+txt = '\n'.join([p.text for p in doc.paragraphs if p.text.strip()])
+
+print('=== Changes made ===')
+for c in changes:
+    print(f'  - {c}')
+
+print('\n=== Verification ===')
+for chk, expected in [
+    ('推荐PT GIOK EMAS TEKNIK（PT.GET）为3#、1#电炉耐材施工单位', True),
+    ('4#电炉砌筑施工，质量、工期、组织等均比较到位', True),
+    ('474.14万元', True),
+    ('责任划分相对复杂', False),
+    ('477.60', False),
+    ('Jinhuan Construction Indonesia', False),
+]:
+    found = chk in txt
+    status = 'OK' if found == expected else 'WARNING'
+    print(f'  [{status}] "{chk[:50]}": found={found}, expected={expected}')
+
+print('\nDone!')

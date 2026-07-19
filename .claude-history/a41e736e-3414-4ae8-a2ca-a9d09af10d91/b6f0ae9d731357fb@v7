@@ -1,0 +1,241 @@
+# -*- coding: utf-8 -*-
+import xlrd, sys, io
+from collections import defaultdict
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+wb = xlrd.open_workbook(r'D:\soft\work-flow\wp-platform\data\templates\影响作业率因素统计 2026(4).xls')
+sh = wb.sheet_by_index(0)
+datemode = wb.datemode
+
+def hex_id(s):
+    return s.encode('utf-8').hex()
+
+def should_exclude_reason(reason_str):
+    h = hex_id(reason_str)
+    if h == 'e7949fe4baa7e7bb84e7bb87': return True
+    if h == 'e8aea1e58892e680a7e6a380e4bfae': return True
+    if 'e4bf9de99a9c' in h: return True
+    if 'e8bda6e8be86' in h: return True
+    return False
+
+def is_dianlu(line_str):
+    return hex_id(line_str).endswith('e794b5e78289')
+
+def is_limo(factor_str):
+    return 'e7ab8be7a3a8' in hex_id(factor_str)
+
+def is_planned_repair(factor_str):
+    """判断是否为计划性检修活动(区别于突发故障)"""
+    h = hex_id(factor_str)
+    # 计划检修关键词: 检修, 修补, 处理, 更换, 加固, 浇筑, 保温, 配合, 灭火, 补焊
+    repair_kw = ['e6a380e4bfae', 'e4bfaee8a3a5', 'e5a484e79086', 'e69bb4e68da2',
+                 'e58aa0e59bba', 'e6b587e7ad91', 'e4bf9de6b8a9', 'e9858de59088',
+                 'e781ade781ab', 'e8a5a5e7848a']
+    for kw in repair_kw:
+        if kw in h:
+            return True
+    return False
+
+def is_sudden_fault(factor_str):
+    """判断是否为突发故障(不应归入立磨)"""
+    h = hex_id(factor_str)
+    # 突发故障关键词: 圆锥破, 堵死, 堵塞, 跳停, 故障
+    fault_kw = ['e59c86e994a5e7a0b4', 'e5a0b5e6adbb', 'e5a0b5e5a19e', 'e8b7b3e5819c', 'e69585e99a9c']
+    for kw in fault_kw:
+        if kw in h:
+            return True
+    return False
+
+def line_num(line_str):
+    h = hex_id(line_str)
+    for n, p in [(1,'31'),(2,'32'),(3,'33')]:
+        if h.startswith(p): return n
+    return 0
+
+# ==== 读取数据 ====
+records = []
+for r in range(1, sh.nrows):
+    v = sh.cell_value(r, 0)
+    if isinstance(v, (int, float)) and v > 40000:
+        t = xlrd.xldate_as_tuple(v, datemode)
+        if t[1] == 6 and t[0] == 2026:
+            line = str(sh.cell_value(r, 3)).strip()
+            reason = str(sh.cell_value(r, 9)).strip()
+            factor = str(sh.cell_value(r, 4)).strip()
+            mins = sh.cell_value(r, 7)
+            ln = line_num(line)
+            if 1 <= ln <= 3 and isinstance(mins, (int, float)) and mins > 0:
+                if not should_exclude_reason(reason):
+                    records.append({
+                        'day': t[2], 'ln': ln,
+                        'factor': factor, 'mins': mins,
+                        'is_dianlu': is_dianlu(line),
+                        'is_limo': is_limo(factor),
+                        'equip': '电炉' if is_dianlu(line) else ('干燥' if 'e5b9b2e787a5' in hex_id(line) else ('回窑' if 'e59b9ee7aa91' in hex_id(line) else '其他')),
+                    })
+
+# ==== 判断哪些日期有立磨事件 ====
+limo_days_by_line = defaultdict(set)
+for rec in records:
+    if rec['is_limo']:
+        limo_days_by_line[rec['ln']].add(rec['day'])
+
+# ==== 重新分类 ====
+# 原则：立磨当天发生的所有"其他检修活动" → 归入立磨影响
+# 因为生产线已因立磨停机，这些检修没造成额外停机
+
+# 按(日期, 线号, 因素)分组
+groups = defaultdict(list)
+for rec in records:
+    key = (rec['day'], rec['ln'], rec['factor'])
+    groups[key].append(rec)
+
+line_own = {1:0.0, 2:0.0, 3:0.0}
+line_limo = {1:0.0, 2:0.0, 3:0.0}
+# 按(线号, 因素)追踪，显示时带设备信息
+factor_own = defaultdict(lambda: {'mins': 0.0, 'lines': set(), 'equips': set()})
+factor_limo = defaultdict(lambda: {'mins': 0.0, 'lines': set(), 'equips': set()})
+
+for (day, ln, factor), recs in groups.items():
+    has_limo = any(r['is_limo'] for r in recs)
+    on_limo_day = day in limo_days_by_line[ln]
+    equips = set(r['equip'] for r in recs)
+
+    if has_limo:
+        dianlu_mins = [r['mins'] for r in recs if r['is_dianlu']]
+        val = max(dianlu_mins) if dianlu_mins else 0
+        line_limo[ln] += val
+        factor_limo[factor]['mins'] += val
+        factor_limo[factor]['lines'].add(ln)
+        factor_limo[factor]['equips'].update(equips)
+    elif on_limo_day:
+        val = max(r['mins'] for r in recs)
+        if is_sudden_fault(factor):
+            line_own[ln] += val
+            factor_own[factor]['mins'] += val
+            factor_own[factor]['lines'].add(ln)
+            factor_own[factor]['equips'].update(equips)
+        elif is_planned_repair(factor):
+            line_limo[ln] += val
+            factor_limo[factor]['mins'] += val
+            factor_limo[factor]['lines'].add(ln)
+            factor_limo[factor]['equips'].update(equips)
+        else:
+            line_own[ln] += val
+            factor_own[factor]['mins'] += val
+            factor_own[factor]['lines'].add(ln)
+            factor_own[factor]['equips'].update(equips)
+    else:
+        val = max(r['mins'] for r in recs)
+        line_own[ln] += val
+        factor_own[factor]['mins'] += val
+        factor_own[factor]['lines'].add(ln)
+        factor_own[factor]['equips'].update(equips)
+
+# ==== 输出 ====
+DAYS = 29
+LINE_MIN = DAYS * 24 * 60
+
+total_own = sum(line_own.values())
+total_limo = sum(line_limo.values())
+total_all = total_own + total_limo
+
+print("=" * 75)
+print("  6月生产线故障率分析（立磨期间检修归入立磨）")
+print("=" * 75)
+print(f"  原则: 立磨故障导致产线停机后，期间所有检修归入立磨影响")
+print(f"  目的: 反映真实额外停机，而非'顺便'做的检修")
+print()
+
+print(f"  期间: 6/1-6/29 | 总可用: {DAYS*24*3} 线·小时")
+print()
+
+print("─" * 75)
+print(f"  {'线':>4} {'自身故障':>18} {'立磨(含同期检修)':>22} {'综合停机':>14} {'自身故障率':>10} {'综合故障率':>10}")
+print("─" * 75)
+for ln in [1,2,3]:
+    own, limo = line_own[ln], line_limo[ln]
+    total_ln = own + limo
+    or_ = own / LINE_MIN * 100
+    tr_ = total_ln / LINE_MIN * 100
+    print(f"  {ln}#线: {own:>8.0f}min ({own/60:>5.1f}h)  {limo:>8.0f}min ({limo/60:>5.1f}h)  {total_ln:>10.0f}min ({total_ln/60:>5.1f}h)  {or_:>8.2f}%  {tr_:>8.2f}%")
+print("─" * 75)
+avg_own = total_own / (LINE_MIN*3) * 100
+avg_all = total_all / (LINE_MIN*3) * 100
+print(f"  {'合计':>4} {total_own:>8.0f}min ({total_own/60:>5.1f}h)  {total_limo:>8.0f}min ({total_limo/60:>5.1f}h)  {total_all:>10.0f}min ({total_all/60:>5.1f}h)  {avg_own:>8.2f}%  {avg_all:>8.2f}%")
+print()
+print(f"  ▲ 立磨(含同期检修)总影响: {total_limo:.0f} min ({total_limo/60:.1f} h)")
+print(f"  ▲ 产线自身平均故障率: {avg_own:.2f}%")
+print(f"  ★ 平均综合故障率: {avg_all:.2f}%")
+print()
+
+# ==== TOP 10（带线号设备信息） ====
+all_factors = {}
+for f, v in factor_own.items(): all_factors[f] = {'mins': v['mins'], 'lines': v['lines'], 'equips': v['equips'], 'src': 'own'}
+for f, v in factor_limo.items(): all_factors[f] = {'mins': v['mins'], 'lines': v['lines'], 'equips': v['equips'], 'src': 'limo'}
+
+ranked = sorted(all_factors.items(), key=lambda x: -x[1]['mins'])
+
+def line_label(ln):
+    return f"{ln}#线"
+
+print("影响时间最长的10项因素（按线别展开）:")
+print("─" * 120)
+print(f"  {'#':>3} {'线别':>5} {'设备':<6} {'因素描述':<44} {'类型':<10} {'停机(min)':>10} {'小时':>8} {'占比':>7}")
+print("─" * 120)
+
+# For top 10 factors, show per-line breakdown
+display_rows = []
+for i, (factor, info) in enumerate(ranked[:10], 1):
+    # Determine type
+    if is_limo(factor):
+        typ = "公辅-立磨"
+    elif is_sudden_fault(factor):
+        typ = "产线自身"
+    elif info['src'] == 'limo' or (not is_limo(factor) and any(
+            True for (day, ln, fac) in groups if fac == factor and day in limo_days_by_line[ln])):
+        typ = "公辅(含检修)"
+    else:
+        typ = "产线自身"
+
+    lines = sorted(info['lines'])
+    equips = sorted(info['equips'])
+
+    # Show total first, then per-line
+    disp = factor if len(factor) <= 40 else factor[:37] + "..."
+    print(f"  {i:>3} {'合计':>5} {'-':<6} {disp:<44} {typ:<10} {info['mins']:>10.0f} {info['mins']/60:>8.1f} {info['mins']/total_all*100:>6.1f}%")
+
+    # Per-line breakdown
+    for ln in lines:
+        ln_mins = 0
+        ln_equips = set()
+        for (day, l, fac), recs in groups.items():
+            if l == ln and fac == factor:
+                ln_mins += max(r['mins'] for r in recs)
+                for r in recs:
+                    ln_equips.add(r['equip'])
+
+        eq_str = '/'.join(sorted(ln_equips)) if ln_equips else '-'
+        pct_ln = ln_mins / total_all * 100
+        print(f"     {'':>3} {line_label(ln):>5} {eq_str:<6} {'':<44} {'':<10} {ln_mins:>10.0f} {ln_mins/60:>8.1f} {pct_ln:>6.1f}%")
+print("─" * 120)
+t10 = sum(info['mins'] for _, info in ranked[:10])
+print(f"  {'TOP 10 合计':>74} {t10:>10.0f} {t10/60:>8.1f} {t10/total_all*100:>6.1f}%")
+print()
+
+# ==== 对比：调整前后 ====
+print("=" * 75)
+print("  对比：调整前(立磨->电炉) vs 调整后(同期检修归入立磨)")
+print("=" * 75)
+# Previous numbers (from before this adjustment)
+prev_own = {1:567, 2:3965, 3:1669}
+prev_limo = {1:2816, 2:2093, 3:720}
+print()
+print(f"  {'线':>4} {'调整前-自身':>14} {'调整前-立磨':>14} {'→':>4} {'调整后-自身':>14} {'调整后-立磨':>14}")
+print("─" * 65)
+for ln in [1,2,3]:
+    print(f"  {ln}#线: {prev_own[ln]:>8.0f}min ({prev_own[ln]/60:>4.1f}h)  {prev_limo[ln]:>8.0f}min ({prev_limo[ln]/60:>4.1f}h)  →  {line_own[ln]:>8.0f}min ({line_own[ln]/60:>4.1f}h)  {line_limo[ln]:>8.0f}min ({line_limo[ln]/60:>4.1f}h)")
+print("─" * 65)
+print(f"  原综合故障率: {(sum(prev_own.values())+sum(prev_limo.values()))/(LINE_MIN*3)*100:.2f}%")
+print(f"  现综合故障率: {avg_all:.2f}%")

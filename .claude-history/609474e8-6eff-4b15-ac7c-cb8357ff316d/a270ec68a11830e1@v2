@@ -1,0 +1,231 @@
+﻿# -*- coding: utf-8 -*-
+"""绩效考核 - KPI计算引擎"""
+from datetime import datetime, date
+from backend.models import db
+from backend.models_kpi import AssessmentKpiResult
+
+
+def calc_calcine_power(year, month, total_electricity_kwh, calcine_quantity_tons):
+    """
+    焙砂电单耗考核 (KPI第8条)
+    规则: 目标540 kWh/t
+    完成: 奖励200美元 + 每降1个百分点+200美元
+    未完成: 考核200美元 + 每超1个百分点+200美元
+    """
+    target = 540.0
+    actual = round(total_electricity_kwh / calcine_quantity_tons, 2)
+    over_rate = round((actual - target) / target * 100, 2)
+
+    if over_rate <= 0:
+        pct_saved = abs(over_rate)
+        full_points = int(pct_saved)
+        base = 200
+        extra = full_points * 200
+        reward = base + extra
+    else:
+        pct_exceed = over_rate
+        full_points = int(pct_exceed) + (1 if pct_exceed != int(pct_exceed) else 0)
+        base = -200
+        reward = -(200 + full_points * 200)
+
+    return {
+        "category": "calcine_power",
+        "category_label": "焙砂电单耗",
+        "department": "冶炼部",
+        "target_value": target,
+        "actual_value": actual,
+        "unit": "kW.h/t",
+        "over_rate": over_rate,
+        "base_reward": base if over_rate <= 0 else -200,
+        "calculated_reward": reward,
+        "final_reward": reward,
+        "input_data": {
+            "total_electricity_kwh": total_electricity_kwh,
+            "calcine_quantity_tons": calcine_quantity_tons
+        },
+        "description": "电炉用电量{}kW.h, 入炉焙砂{}t, 单耗{}kW.h/t, {}目标({}){}%".format(
+            total_electricity_kwh, calcine_quantity_tons, actual,
+            "低于" if over_rate <= 0 else "高于", target, abs(over_rate)
+        ),
+    }
+
+
+def save_kpi_result(calc_result):
+    """保存KPI计算结果"""
+    try:
+        record = AssessmentKpiResult(
+            year=calc_result.get("year", date.today().year),
+            month=calc_result.get("month", date.today().month),
+            category=calc_result["category"],
+            department=calc_result["department"],
+            target_value=calc_result["target_value"],
+            actual_value=calc_result["actual_value"],
+            unit=calc_result["unit"],
+            over_rate=calc_result["over_rate"],
+            base_reward=calc_result["base_reward"],
+            calculated_reward=calc_result["calculated_reward"],
+            manual_adjustment=calc_result.get("manual_adjustment", 0),
+            final_reward=calc_result["final_reward"],
+            input_data=calc_result["input_data"],
+            description=calc_result["description"],
+            created_at=datetime.now(),
+        )
+        db.session.add(record)
+        db.session.commit()
+        return record, None
+    except Exception as e:
+        db.session.rollback()
+        return None, str(e)
+
+
+def list_kpi_results(params=None):
+    """查询KPI计算结果"""
+    query = AssessmentKpiResult.query
+    if params:
+        if params.get("year"):
+            query = query.filter(AssessmentKpiResult.year == params["year"])
+        if params.get("month"):
+            query = query.filter(AssessmentKpiResult.month == params["month"])
+        if params.get("category"):
+            query = query.filter(AssessmentKpiResult.category == params["category"])
+    query = query.order_by(AssessmentKpiResult.year.desc(), AssessmentKpiResult.month.desc())
+    return [r.to_dict() for r in query.all()]
+
+def calc_quota_material(year, month, material_name, target_qty, actual_qty, unit_price, unit="吨"):
+    """
+    定额材料消耗考核 (KPI第11-15条)
+    规则: 按照超额部分*超幅进行扣罚，考核上限为超幅10%
+    
+    定额材料: 电极糊/镁质炮泥/无水炮泥/绿泥/脱模剂
+    """
+    if actual_qty <= target_qty:
+        over_rate = 0.0
+        excess_qty = 0.0
+        impact_amount = 0.0
+        penalty = 0.0
+        result_text = "完成"
+    else:
+        over_rate = round((actual_qty - target_qty) / target_qty * 100, 2)
+        excess_qty = round(actual_qty - target_qty, 2)
+        impact_amount = round(excess_qty * unit_price, 2)
+        penalty_raw = round(impact_amount * over_rate / 100, 2)
+        max_penalty = round(impact_amount * 0.10, 2)
+        penalty = -min(penalty_raw, max_penalty)
+        result_text = "未完成"
+
+    return {
+        "category": "quota_material",
+        "category_label": "定额材料 - " + material_name,
+        "department": "冶炼部",
+        "target_value": target_qty,
+        "actual_value": actual_qty,
+        "unit": unit,
+        "over_rate": over_rate,
+        "base_reward": 0 if penalty == 0 else -min(impact_amount * 0.10, impact_amount * over_rate / 100),
+        "calculated_reward": penalty,
+        "final_reward": penalty,
+        "input_data": {
+            "material_name": material_name,
+            "target_qty": target_qty,
+            "actual_qty": actual_qty,
+            "unit_price": unit_price,
+            "unit": unit
+        },
+        "description": "{0}: 5月目标{1}{4}, 实际{2}{4}, 超预算{3}{4}".format(
+            material_name, target_qty, actual_qty, excess_qty, unit
+        ) if excess_qty > 0 else "{0}: 5月完成({1}{2})".format(material_name, actual_qty, unit),
+    }
+
+def calc_diesel(year, month, department, target_qty, actual_qty, fixed_price):
+    """
+    柴油消耗考核 (KPI第10条)
+    规则: 按照超额部分*超幅进行扣罚，考核上限为超幅10%
+    部门: 冶炼部/电厂部/生产保障部/营销物流部/行政部
+    """
+    if actual_qty <= target_qty:
+        over_rate = 0.0
+        excess_qty = 0.0
+        impact_amount = 0.0
+        penalty = 0.0
+    else:
+        over_rate = round((actual_qty - target_qty) / target_qty * 100, 2)
+        excess_qty = round(actual_qty - target_qty, 2)
+        impact_amount = round(excess_qty * fixed_price, 2)
+        penalty_raw = round(impact_amount * over_rate / 100, 2)
+        max_penalty = round(impact_amount * 0.10, 2)
+        penalty = -min(penalty_raw, max_penalty)
+
+    return {
+        "category": "diesel",
+        "category_label": "柴油消耗 - " + department,
+        "department": department,
+        "target_value": target_qty,
+        "actual_value": actual_qty,
+        "unit": "升",
+        "over_rate": over_rate,
+        "base_reward": round(impact_amount * 0.10, 2) if penalty != 0 else 0,
+        "calculated_reward": penalty,
+        "final_reward": penalty,
+        "input_data": {
+            "department": department,
+            "target_qty": target_qty,
+            "actual_qty": actual_qty,
+            "fixed_price": fixed_price
+        },
+        "description": "{0}: 目标{1}升, 实际{2}升, {3}".format(
+            department, target_qty, actual_qty, "完成" if penalty == 0 else "超预算" + str(excess_qty) + "升"
+        ),
+    }
+
+def calc_budget_permille(year, month, category, category_label, department, target_amount, actual_amount, rate_permille):
+    """
+    通用预算超降考核 (辅材5‰/备件5‰/存货1‰)
+    规则: 基砷100, 超出/节约部分*rate‰
+    正数=奖励, 负数=考核
+    """
+    diff = round(actual_amount - target_amount, 2)
+    if diff <= 0:
+        saved = abs(diff)
+        reward = round(100 + saved * rate_permille / 1000, 2)
+    else:
+        reward = round(-(100 + diff * rate_permille / 1000), 2)
+    over_rate = round(diff / target_amount * 100, 2) if target_amount else 0.0
+
+    return {
+        "category": category,
+        "category_label": category_label,
+        "department": department,
+        "target_value": target_amount,
+        "actual_value": actual_amount,
+        "unit": "USD",
+        "over_rate": over_rate,
+        "base_reward": 100 if diff <= 0 else -100,
+        "calculated_reward": reward,
+        "final_reward": reward,
+        "input_data": {"target": target_amount, "actual": actual_amount, "rate": rate_permille},
+        "description": department + ": " + ("节支" if diff <= 0 else "超支") + str(abs(diff)) + "USD",
+    }
+
+def calc_manual_items(year, month, category, category_label, department, items):
+    """
+    手动录入考核项汇总 (设备设施专项/提质增效)
+    items: [{"desc": "..."描述, "amount": 金额}]
+    正数=奖励, 负数=考核
+    """
+    total = round(sum(it["amount"] for it in items), 2)
+    descs = "; ".join([it["desc"] + ": " + str(it["amount"]) + "USD" for it in items])
+
+    return {
+        "category": category,
+        "category_label": category_label,
+        "department": department,
+        "target_value": 0,
+        "actual_value": total,
+        "unit": "USD",
+        "over_rate": 0,
+        "base_reward": 0,
+        "calculated_reward": total,
+        "final_reward": total,
+        "input_data": {"items": items},
+        "description": descs[:300],
+    }

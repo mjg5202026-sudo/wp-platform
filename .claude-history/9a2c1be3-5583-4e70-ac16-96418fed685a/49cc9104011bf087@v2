@@ -1,0 +1,133 @@
+import os, sys, zipfile, tempfile, shutil, re
+sys.stdout.reconfigure(encoding='utf-8')
+
+path = r'D:\工作\装备能源\检修管理\2026年\年度大修\3#生产线\评审'
+
+# Only modify the EF report (Doc 1)
+fn = [f for f in os.listdir(path) if '2026.07.14' in f and '电炉' in f and f.endswith('.docx')][0]
+fp = os.path.join(path, fn)
+print(f'Modifying: {fn[:50]}...')
+
+tmpdir = tempfile.mkdtemp()
+with zipfile.ZipFile(fp, 'r') as z:
+    z.extractall(tmpdir)
+
+docx_path = os.path.join(tmpdir, 'word', 'document.xml')
+with open(docx_path, 'r', encoding='utf-8') as f:
+    xml = f.read()
+
+# --- Changes in 推荐意见 section ---
+# Original text referring to 印尼金川建设 as recommended for EF
+old_rec_1 = '经综合比较两家合格单位的最终报价、技术能力、印尼项目施工经验及安全质量管控体系，推荐印尼金川建设有限公司为3#、1#电炉耐材施工单位。推荐理由如下：'
+new_rec_1 = '经综合比较两家合格单位的最终报价、技术能力、印尼项目施工经验及安全质量管控体系，推荐PT GIOK EMAS TEKNIK（PT.GET）为3#、1#电炉耐材施工单位。推荐理由如下：'
+
+xml = xml.replace(old_rec_1, new_rec_1)
+
+# Reason 1: originally about 印尼金川建设
+old_rec_2 = '1. 印尼金川建设有限公司为金川集团在印尼注册的全资子公司，长期服务WP园区建设，熟悉现场条件及管理要求，具备冶金工程施工总承包资质及印尼当地施工许可。全费用报价238.80万元/台（两台合计477.60万元），较4#电炉实际费用有显著下降。'
+new_rec_2 = '1. PT GIOK EMAS TEKNIK（PT.GET）曾承接4#电炉砌筑施工，施工质量、工期保障、现场组织等均比较到位，具有丰富的电炉耐材施工经验。最终报价237.07万元/台（两台合计474.14万元），较4#电炉实际总费用258.427万元/台有显著下降，价格具有竞争力。'
+
+xml = xml.replace(old_rec_2, new_rec_2)
+
+# Reason 2: originally about 江苏鑫鑫, now about 印尼金川建设
+old_rec_3 = '2. PT GIOK EMAS TEKNIK（PT.GET）报价237.07万元/台，低于印尼金川建设有限公司，但PT GIOK EMAS TEKNIK（PT.GET）与PT.GET为联合报价模式，责任划分相对复杂，且PT.GET的JK3工业安全认证尚在申办中，存在一定履约风险。'
+# But this might have been partially cleaned. Let me check what's actually there.
+# From earlier output the remaining text was:
+# "2. PT GIOK EMAS TEKNIK（PT.GET）报价237.07万元/台，低于印尼金川建设有限公司，但PT GIOK EMAS TEKNIK（PT.GET）与PT.GET为联合报价模式，责任划分相对复杂，且PT.GET的JK3工业安全认证尚在申办中，存在一定履约风险。"
+
+# Hmm, this got cleaned in the previous pass. Let me search for what text is actually there now.
+# The output showed the text was already partially cleaned. Let me check what remains.
+
+# Actually let me read the current XML to find the exact text
+idx = xml.find('推荐理由如下')
+if idx >= 0:
+    snippet = xml[idx:idx+3000]
+    print(f'Current recommendation text around "推荐理由如下":')
+    # Extract text between XML tags
+    texts = re.findall(r'<w:t[^>]*>([^<]*)</w:t>', snippet)
+    clean = ''.join(texts)
+    print(f'  {clean[:600]}')
+
+# Based on what I find, I'll adjust
+# The old text for reason 3 was probably cleaned. Let me write a new reason 2.
+old_rec_3_clean = '低于印尼金川建设有限公司，但PT GIOK EMAS TEKNIK（PT.GET）的JK3工业安全认证尚在申办中，存在一定履约风险。'
+new_rec_3_clean = '印尼金川建设有限公司报价238.80万元/台，略高于PT GIOK EMAS TEKNIK（PT.GET），且无电炉耐材施工业绩，建议优先选用有成熟经验的施工单位。'
+
+if old_rec_3_clean in xml:
+    xml = xml.replace(old_rec_3_clean, new_rec_3_clean)
+else:
+    # Try other variations
+    for variant in [
+        'PT GIOK EMAS TEKNIK（PT.GET）的JK3工业安全认证尚在申办中，存在一定履约风险。',
+        '存在一定履约风险。',
+    ]:
+        if variant in xml:
+            xml = xml.replace(variant, '印尼金川建设有限公司报价238.80万元/台，略高于PT GIOK EMAS TEKNIK（PT.GET），且无电炉耐材施工业绩。')
+            break
+
+# Also need to handle the old Reason 3 text
+old_rec_4 = '3. 印尼金川建设有限公司作为集团内部企业，在施工协调、工期保障、安全管控及后期服务方面具有天然优势。'
+new_rec_4 = '2. 建议在合同签订前，明确要求PT GIOK EMAS TEKNIK（PT.GET）完善JK3工业安全认证等相关手续，确保施工合规性。'
+
+if old_rec_4 in xml:
+    xml = xml.replace(old_rec_4, new_rec_4)
+
+# --- Update 提请审议事项 ---
+old_app = '建议审定3#、1#电炉耐材施工项目竞争性谈判结果，同意推荐印尼金川建设有限公司为合作单位，两台电炉全费用报价合计477.60万元（含税）。'
+# Remove the "若会议认为需要进一步压降费用，可继续与两家单位进行价格谈判。" part
+old_app2 = '建议审定3#、1#电炉耐材施工项目竞争性谈判结果，同意推荐印尼金川建设有限公司为合作单位，两台电炉全费用报价合计477.60万元（含税）。若会议认为需要进一步压降费用，可继续与两家单位进行价格谈判。会后按相关规定推进合同签订工作。'
+new_app = '建议审定3#、1#电炉耐材施工项目竞争性谈判结果，同意推荐PT GIOK EMAS TEKNIK（PT.GET）为合作单位，两台电炉全费用报价合计474.14万元（含税）。会后按相关规定推进合同签订工作。'
+
+xml = xml.replace(old_app2, new_app)
+
+# Also update the English section
+xml = xml.replace(
+    'Disarankan untuk menyetujui hasil negosiasi kompetitif dan menunjuk Jinhuan Construction Indonesia Co., Ltd. sebagai kontraktor terpilih dengan total biaya 4.776.000 CNY.',
+    'Disarankan untuk menyetujui hasil negosiasi kompetitif dan menunjuk PT GIOK EMAS TEKNIK sebagai kontraktor terpilih dengan total biaya 4.741.400 CNY.'
+)
+
+# Update English recommendation
+xml = xml.replace(
+    'Rekomendasi: Memilih Jinhuan Construction Indonesia Co., Ltd. sebagai kontraktor terpilih.',
+    'Rekomendasi: Memilih PT GIOK EMAS TEKNIK（PT.GET）sebagai kontraktor terpilih.'
+)
+
+# Now also update the competitive negotiation section
+# Change the analysis to favor PT GET
+old_analysis = '两家单位最终报价均低于4#电炉实际总费用，价格合理。'
+new_analysis = '两家单位最终报价均低于4#电炉实际总费用，价格合理。PT GIOK EMAS TEKNIK（PT.GET）曾成功实施4#电炉砌筑施工，质量、工期、组织等均比较到位，经验优势明显。'
+xml = xml.replace(old_analysis, new_analysis)
+
+# Also update the 竞争性谈判 section text about EF
+old_neg = 'PT GIOK EMAS TEKNIK（PT.GET）：3#、1#电炉（含炉盖）筑炉施工237.07万元/台（两台合计474.14万元），较初始报价274.94万元/台下降13.8%，较一次谈价270.66万元/台下降12.4%。'
+# This should be fine, just keep it.
+
+# Write back
+with open(docx_path, 'w', encoding='utf-8') as f:
+    f.write(xml)
+
+# Repack
+with zipfile.ZipFile(fp, 'w', zipfile.ZIP_DEFLATED) as zout:
+    for root, dirs, files in os.walk(tmpdir):
+        for file in files:
+            zout.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), tmpdir))
+
+shutil.rmtree(tmpdir)
+
+# Verify
+from docx import Document
+doc = Document(fp)
+txt = '\n'.join([p.text for p in doc.paragraphs if p.text.strip()])
+print('\n--- Verification ---')
+# Check recommendation
+for chk in ['推荐理由如下', '提请审议', 'PT GIOK EMAS TEKNIK', '印尼金川建设', '474.14', '477.60', '4#电炉砌筑']:
+    if chk in txt:
+        # Find context
+        for p in doc.paragraphs:
+            if chk in p.text:
+                print(f'  [{chk}]: {p.text[:120]}')
+                break
+    else:
+        print(f'  [{chk}]: NOT FOUND!')
+
+print('\nDone!')

@@ -1,0 +1,408 @@
+# -*- coding: utf-8 -*-
+"""
+Excel 导入引擎 - 按表名自动导入
+"""
+import os
+import json
+from datetime import datetime, date
+from typing import List, Dict, Optional, Tuple
+
+from backend.models import db
+from backend.models import (
+    OperationImpactFactor, FaultStatistic,
+    MaterialConsumption, EnergyConsumption,
+    InventoryTarget, InspectionIssue, Project,
+    PerformanceAssessment
+)
+from backend.utils.excel_utils import (
+    load_workbook, detect_header_row, parse_header_row,
+    parse_date_value, parse_datetime_value,
+    convert_time_serial_to_hours, get_test_data
+)
+
+
+class ExcelImportResult:
+    """导入结果"""
+    def __init__(self):
+        self.success = 0
+        self.errors = []
+        self.table_name = ""
+
+    def add_success(self, count: int = 1):
+        self.success += count
+
+    def add_error(self, row: int, msg: str):
+        self.errors.append({"row": row, "message": str(msg)})
+
+    def to_dict(self):
+        return {
+            "table": self.table_name,
+            "success": self.success,
+            "errors": self.errors[:20],
+            "status": "ok" if not self.errors else "partial_error"
+        }
+
+
+# ============================================================
+# 主要导入函数
+# ============================================================
+def import_impact_factors(file_path: str) -> ExcelImportResult:
+    """导入影响作业率因素"""
+    result = ExcelImportResult()
+    result.table_name = "operation_impact_factors"
+
+    try:
+        wb = load_workbook(file_path)
+        ws = wb.sheet_by_index(0) if hasattr(wb, "sheet_by_index") else wb.active
+
+        if hasattr(ws, "nrows"):  # xlrd
+            rows_total = ws.nrows
+            for r in range(1, rows_total):
+                try:
+                    record = _parse_xls_impact_row(ws, r)
+                    if record:
+                        db.session.add(record)
+                        result.add_success()
+                except Exception as e:
+                    result.add_error(r + 1, str(e))
+        else:  # openpyxl
+            header_row = detect_header_row(ws)
+            if not header_row:
+                result.add_error(0, "???????")
+                return result
+
+            headers = parse_header_row(ws, header_row)
+            for r in range(header_row + 1, ws.max_row + 1):
+                try:
+                    row_data = {}
+                    is_empty = True
+                    for c, h in enumerate(headers):
+                        if c >= len(headers):
+                            break
+                        v = ws.cell(r, c + 1).value
+                        if v is not None:
+                            is_empty = False
+                        row_data[h] = v
+                    if is_empty:
+                        continue
+                    record = _build_impact_from_headers(row_data)
+                    if record:
+                        db.session.add(record)
+                        result.add_success()
+                except Exception as e:
+                    result.add_error(r + 1, str(e))
+
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        result.add_error(0, f"??????: {str(e)}")
+
+    return result
+
+
+def _parse_xls_impact_row(ws, r: int) -> Optional[OperationImpactFactor]:
+    """?? xls ???????????"""
+    vals = [ws.cell_value(r, c) if c < ws.ncols else "" for c in range(10)]
+    if not vals[0] or str(vals[0]).strip() == "":
+        return None
+
+    date_str = parse_date_value(vals[0])
+
+    # ????: Excel serial number -> HH:MM
+    start_str = None
+    end_str = None
+    try:
+        if isinstance(vals[5], (int, float)):
+            from datetime import datetime, date as dt, timedelta
+            base = dt(1899, 12, 30)
+            s = base + timedelta(days=float(vals[5]))
+            start_str = s.strftime("%H:%M")
+        else:
+            start_str = str(vals[5]) if vals[5] else None
+        if isinstance(vals[6], (int, float)):
+            from datetime import datetime, date as dt, timedelta
+            base = dt(1899, 12, 30)
+            e = base + timedelta(days=float(vals[6]))
+            end_str = e.strftime("%H:%M")
+        else:
+            end_str = str(vals[6]) if vals[6] else None
+    except:
+        pass
+
+    shift = str(vals[1]).strip() if vals[1] else ""
+    team = str(vals[2]).strip() if vals[2] else ""
+    system = str(vals[3]).strip() if vals[3] else ""
+    factor = str(vals[4]).strip() if vals[4] else ""
+    impact_min = int(float(str(vals[7]).replace(",", ""))) if vals[7] else 0
+    impact_type = str(vals[8]).strip() if vals[8] else ""
+    cause = str(vals[9]).strip() if vals[9] else ""
+
+    start_time = None
+    end_time = None
+    if date_str and start_str:
+        ds = date_str.isoformat() if hasattr(date_str, "isoformat") else str(date_str)
+        parts = ds.split("-")
+        if len(parts) == 3:
+            start_time = f"{parts[0]}-{parts[1]}-{parts[2]} {start_str}:00"
+    if date_str and end_str:
+        ds = date_str.isoformat() if hasattr(date_str, "isoformat") else str(date_str)
+        parts = ds.split("-")
+        if len(parts) == 3:
+            end_time = f"{parts[0]}-{parts[1]}-{parts[2]} {end_str}:00"
+
+    # 解析原始 Python date 对象
+    raw_date = parse_date_value(vals[0])
+    if raw_date and isinstance(raw_date, str):
+        try:
+            date_obj = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
+        except:
+            date_obj = date.today()
+    else:
+        date_obj = raw_date or date.today()
+
+    return OperationImpactFactor(
+        date=date_obj,
+        shift=shift,
+        team=team,
+        system=system,
+        impact_factor=factor,
+        impact_minutes=impact_min,
+        impact_type=impact_type,
+        cause_analysis=cause,
+        created_at=datetime.now(),
+    )
+
+
+def _build_impact_from_headers(row_data: Dict) -> Optional[OperationImpactFactor]:
+    """???????????"""
+    if not row_data.get("date") and not row_data.get("impact_factor"):
+        return None
+    raw_date = row_data.get("date")
+    if raw_date:
+        if isinstance(raw_date, str):
+            try:
+                date_obj = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
+            except:
+                date_obj = date.today()
+        else:
+            date_obj = raw_date
+    else:
+        date_obj = date.today()
+
+    return OperationImpactFactor(
+        date=date_obj,
+        shift=str(row_data.get("shift", "")),
+        team=str(row_data.get("team", "")),
+        system=str(row_data.get("system", "")),
+        impact_factor=str(row_data.get("impact_factor", "")),
+        start_time=str(row_data.get("start_time", "")),
+        end_time=str(row_data.get("end_time", "")),
+        impact_minutes=int(float(str(row_data.get("impact_minutes", 0)))) if row_data.get("impact_minutes") else 0,
+        impact_type=str(row_data.get("impact_type", "")),
+        cause_analysis=str(row_data.get("cause_analysis", "")),
+        created_at=datetime.now(),
+    )
+
+
+# ============================================================
+# ?? ????
+# ============================================================
+def import_materials(file_path: str) -> ExcelImportResult:
+    """????????"""
+    result = ExcelImportResult()
+    result.table_name = "material_consumptions"
+    try:
+        wb = load_workbook(file_path)
+        ws = wb.active if hasattr(wb, "active") else wb.sheet_by_index(0)
+
+        if hasattr(ws, "nrows"):
+            pass  # ???? xls ???????
+        else:
+            header_row = detect_header_row(ws)
+            if not header_row:
+                result.add_error(0, "???????")
+                return result
+            headers = parse_header_row(ws, header_row)
+            for r in range(header_row + 1, ws.max_row + 1):
+                try:
+                    data = {}
+                    empty = True
+                    for c, h in enumerate(headers):
+                        v = ws.cell(r, c + 1).value
+                        if v is not None:
+                            empty = False
+                        data[h] = v
+                    if empty or not data.get("item_name"):
+                        continue
+                    raw_d = data.get("date", "")
+                    if isinstance(raw_d, str):
+                        try:
+                            d_obj = datetime.strptime(raw_d[:10], "%Y-%m-%d").date()
+                        except:
+                            d_obj = date.today()
+                    else:
+                        d_obj = raw_d or date.today()
+                    record = MaterialConsumption(
+                        date=d_obj,
+                        category=str(data.get("category", "")),
+                        item_name=str(data.get("item_name", "")),
+                        specification=str(data.get("specification", "")),
+                        quantity=float(data.get("quantity", 0) or 0),
+                        unit=str(data.get("unit", "")),
+                        unit_price=float(data.get("unit_price", 0) or 0),
+                        total_amount=float(data.get("total_amount", 0) or 0),
+                        warehouse=str(data.get("warehouse", "")),
+                        department=str(data.get("department", "")),
+                        remark=str(data.get("remark", "")),
+                        created_at=datetime.now(),
+                    )
+                    db.session.add(record)
+                    result.add_success()
+                except Exception as e:
+                    result.add_error(r + 1, str(e))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        result.add_error(0, f"????: {e}")
+    return result
+
+
+# ============================================================
+# 导入能源消耗数据
+# ============================================================
+def import_energy(file_path: str) -> ExcelImportResult:
+    """导入能源消耗数据"""
+    result = ExcelImportResult()
+    result.table_name = "energy_consumptions"
+
+    try:
+        wb = load_workbook(file_path)
+        ws = wb.active if hasattr(wb, "active") else wb.sheet_by_index(0)
+
+        if hasattr(ws, "nrows"):
+            # xlrd .xls 文件处理
+            rows_total = ws.nrows
+            for r in range(1, rows_total):
+                try:
+                    vals = [ws.cell_value(r, c) if c < ws.ncols else "" for c in range(9)]
+                    if not vals[0] or str(vals[0]).strip() == "":
+                        continue
+                    raw_date = parse_date_value(vals[0])
+                    if isinstance(raw_date, str):
+                        try:
+                            date_obj = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
+                        except:
+                            date_obj = date.today()
+                    else:
+                        date_obj = raw_date or date.today()
+
+                    record = EnergyConsumption(
+                        date=date_obj,
+                        energy_type=str(vals[1]).strip() if vals[1] else "",
+                        consumption=float(vals[2]) if vals[2] else 0,
+                        unit=str(vals[3]).strip() if vals[3] else "",
+                        unit_price=float(vals[4]) if vals[4] else 0,
+                        total_cost=float(vals[5]) if vals[5] else 0,
+                        generation_amount=float(vals[6]) if vals[6] else 0,
+                        consumption_per_unit=float(vals[7]) if vals[7] else None,
+                        remark=str(vals[8]).strip() if vals[8] else "",
+                        created_at=datetime.now(),
+                    )
+                    db.session.add(record)
+                    result.add_success()
+                except Exception as e:
+                    result.add_error(r + 1, str(e))
+        else:
+            # openpyxl .xlsx 文件处理
+            header_row = detect_header_row(ws)
+            if not header_row:
+                result.add_error(0, "未检测到表头行")
+                return result
+            headers = parse_header_row(ws, header_row)
+            for r in range(header_row + 1, ws.max_row + 1):
+                try:
+                    row_data = {}
+                    is_empty = True
+                    for c, h in enumerate(headers):
+                        if c >= len(headers):
+                            break
+                        v = ws.cell(r, c + 1).value
+                        if v is not None:
+                            is_empty = False
+                        row_data[h] = v
+                    if is_empty:
+                        continue
+                    record = _build_energy_from_headers(row_data)
+                    if record:
+                        db.session.add(record)
+                        result.add_success()
+                except Exception as e:
+                    result.add_error(r + 1, str(e))
+
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        result.add_error(0, f"导入失败: {str(e)}")
+
+    return result
+
+
+def _build_energy_from_headers(row_data: dict):
+    """从表头映射构建能源消耗记录"""
+    raw_date = row_data.get("date") or row_data.get("日期")
+    if not raw_date:
+        return None
+    if isinstance(raw_date, str):
+        try:
+            date_obj = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
+        except:
+            date_obj = date.today()
+    else:
+        date_obj = raw_date
+
+    return EnergyConsumption(
+        date=date_obj,
+        energy_type=str(row_data.get("energy_type", "")),
+        consumption=float(row_data.get("consumption", 0) or 0),
+        unit=str(row_data.get("unit", "")),
+        unit_price=float(row_data.get("unit_price", 0) or 0),
+        total_cost=float(row_data.get("total_cost", 0) or 0),
+        generation_amount=float(row_data.get("generation_amount", 0) or 0),
+        consumption_per_unit=float(row_data.get("consumption_per_unit", 0)) if row_data.get("consumption_per_unit") else None,
+        remark=str(row_data.get("remark", "")),
+        created_at=datetime.now(),
+    )
+
+
+# ============================================================
+# 自动导入入口（按表名或文件名自动识别）
+# ============================================================
+def auto_import(file_path: str, table_name: str = None) -> ExcelImportResult:
+    """自动导入入口"""
+    result = ExcelImportResult()
+
+    # 未指定表名时按文件名自动识别
+    if not table_name:
+        fname = os.path.basename(file_path)
+        if "作业率" in fname:
+            return import_impact_factors(file_path)
+        elif "物资" in fname or "材料" in fname or "消耗" in fname:
+            return import_materials(file_path)
+        elif "能源" in fname or "能耗" in fname or "电" in fname or "柴油" in fname:
+            return import_energy(file_path)
+        else:
+            result.add_error(0, f"无法识别文件类型: {fname}")
+            return result
+
+    # 按指定表名导入
+    importers = {
+        "impact_factors": import_impact_factors,
+        "materials": import_materials,
+        "energy": import_energy,
+    }
+    importer = importers.get(table_name)
+    if importer:
+        return importer(file_path)
+    else:
+        result.add_error(0, f"不支持的表名: {table_name}")
+        return result

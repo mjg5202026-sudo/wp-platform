@@ -1,0 +1,220 @@
+﻿import React, { useState, useEffect } from 'react'
+import {
+  Card, Row, Col, Statistic, Button, Select, DatePicker, Table, Tag,
+  Space, message, Spin, Popconfirm, Divider, Tooltip
+} from 'antd'
+import {
+  FileTextOutlined, DownloadOutlined, DeleteOutlined,
+  ThunderboltOutlined, CalendarOutlined, FileWordOutlined,
+  AuditOutlined, RiseOutlined
+} from '@ant-design/icons'
+import dayjs from 'dayjs'
+import request from '../api'
+
+const { MonthPicker } = DatePicker
+
+const REPORT_TYPES = [
+  { key: 'monthly', label: '装备能源部月报', icon: <FileTextOutlined />, color: '#1677ff' },
+  { key: 'weekly', label: '行政例会材料', icon: <CalendarOutlined />, color: '#52c41a' },
+  { key: 'quality', label: '提质增效汇报', icon: <RiseOutlined />, color: '#fa8c16' },
+  { key: 'epr', label: 'EPR绩效考核报告', icon: <AuditOutlined />, color: '#722ed1' },
+]
+
+const Reports = () => {
+  const [loading, setLoading] = useState(false)
+  const [genLoading, setGenLoading] = useState(false)
+  const [reportType, setReportType] = useState('monthly')
+  const [month, setMonth] = useState(dayjs())
+  const [week, setWeek] = useState(1)
+  const [reports, setReports] = useState([])
+  const [downloading, setDownloading] = useState(null)
+
+  const loadReports = async () => {
+    setLoading(true)
+    try {
+      const res = await request.get('/reports/list')
+      setReports(res.data.data || [])
+    } catch (e) {
+      console.error('load reports error:', e)
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { loadReports() }, [])
+
+  const handleGenerate = async () => {
+    setGenLoading(true)
+    try {
+      const res = await request.post('/reports/generate', {
+        type: reportType,
+        year: month.year(),
+        month: month.month() + 1,
+        week: reportType === 'weekly' ? week : 1,
+      })
+      if (res.data.status === 'ok') {
+        message.success(res.data.message)
+        loadReports()
+      } else {
+        message.error(res.data.message)
+      }
+    } catch (e) {
+      message.error('生成失败: ' + (e.response?.data?.message || e.message))
+    }
+    setGenLoading(false)
+  }
+
+  const handleDownload = async (name) => {
+    setDownloading(name)
+    try {
+      const res = await request.post('/reports/download', { name }, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = name
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+      message.success('下载成功')
+    } catch (e) {
+      message.error('下载失败')
+    }
+    setDownloading(null)
+  }
+
+  const handleDelete = async (name) => {
+    try {
+      await request.post('/reports/delete', { name })
+      message.success('已删除')
+      loadReports()
+    } catch (e) {
+      message.error('删除失败')
+    }
+  }
+
+  const typeIcon = REPORT_TYPES.find(t => t.key === reportType)?.icon || <FileTextOutlined />
+
+  const columns = [
+    { title: '报告名称', dataIndex: 'name', ellipsis: true, render: v => (
+      <Space><FileWordOutlined style={{ color: '#1677ff' }} />{v}</Space>
+    )},
+    { title: '大小', dataIndex: 'size_display', width: 100 },
+    { title: '生成时间', dataIndex: 'created', width: 180, render: v => v?.slice(0, 19).replace('T', ' ') },
+    { title: '操作', width: 160, render: (_, r) => (
+      <Space>
+        <Button type="primary" size="small"
+          icon={<DownloadOutlined />}
+          loading={downloading === r.name}
+          onClick={() => handleDownload(r.name)}
+        >下载</Button>
+        <Popconfirm title="确认删除?" onConfirm={() => handleDelete(r.name)}>
+          <Button danger size="small" icon={<DeleteOutlined />} />
+        </Popconfirm>
+      </Space>
+    )},
+  ]
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <h2><FileTextOutlined /> 报告中心</h2>
+        <p>一键生成装备能源部工作报告（DOCX格式）</p>
+      </div>
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} md={16}>
+          <Card title="生成报告" size="small">
+            <Row gutter={[16, 16]} align="bottom">
+              <Col xs={24} sm={8}>
+                <div style={{ marginBottom: 4, color: '#888' }}>报告类型</div>
+                <Select
+                  value={reportType} onChange={v => setReportType(v)}
+                  style={{ width: '100%' }} size="large"
+                  options={REPORT_TYPES.map(t => ({
+                    label: <Space>{t.icon}{t.label}</Space>,
+                    value: t.key,
+                  }))}
+                />
+              </Col>
+              <Col xs={12} sm={6}>
+                <div style={{ marginBottom: 4, color: '#888' }}>月份</div>
+                <MonthPicker
+                  value={month} onChange={m => m && setMonth(m)}
+                  allowClear={false} style={{ width: '100%' }} size="large"
+                />
+              </Col>
+              {reportType === 'weekly' && (
+                <Col xs={12} sm={4}>
+                  <div style={{ marginBottom: 4, color: '#888' }}>周次</div>
+                  <Select
+                    value={week} onChange={setWeek}
+                    style={{ width: '100%' }} size="large"
+                    options={[1,2,3,4,5].map(w => ({ label: 第周, value: w }))}
+                  />
+                </Col>
+              )}
+              <Col xs={24} sm={reportType === 'weekly' ? 6 : 10}>
+                <Button
+                  type="primary" size="large"
+                  icon={<ThunderboltOutlined />}
+                  onClick={handleGenerate}
+                  loading={genLoading}
+                  block
+                >一键生成</Button>
+              </Col>
+            </Row>
+            <Row style={{ marginTop: 16 }}>
+              {REPORT_TYPES.map(t => (
+                <Col span={6} key={t.key} style={{ textAlign: 'center' }}>
+                  <Tag
+                    color={t.color}
+                    style={{ cursor: 'pointer', padding: '2px 8px' }}
+                    onClick={() => setReportType(t.key)}
+                  >{t.label}</Tag>
+                </Col>
+              ))}
+            </Row>
+          </Card>
+        </Col>
+
+        <Col xs={24} md={8}>
+          <Row gutter={[8, 8]}>
+            <Col span={12}>
+              <Card size="small">
+                <Statistic
+                  title="已生成报告"
+                  value={reports.length} suffix="份"
+                  valueStyle={{ color: '#1677ff' }}
+                />
+              </Card>
+            </Col>
+            <Col span={12}>
+              <Card size="small">
+                <Statistic
+                  title="报告类型"
+                  value={REPORT_TYPES.length} suffix="种"
+                  valueStyle={{ color: '#52c41a' }}
+                />
+              </Card>
+            </Col>
+          </Row>
+        </Col>
+      </Row>
+
+      <Card
+        title={<Space><FileTextOutlined />已生成报告</Space>}
+        style={{ marginTop: 16 }}
+        extra={<Button size="small" onClick={loadReports}>刷新</Button>}
+      >
+        <Table
+          dataSource={reports} columns={columns} rowKey="name"
+          size="small" loading={loading}
+          pagination={{ pageSize: 20, showTotal: t => 共份 }}
+          locale={{ emptyText: '暂无报告，请先生成' }}
+        />
+      </Card>
+    </div>
+  )
+}
+
+export default Reports

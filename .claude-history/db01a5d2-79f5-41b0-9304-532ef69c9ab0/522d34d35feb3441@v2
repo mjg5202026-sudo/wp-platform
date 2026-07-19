@@ -1,0 +1,11 @@
+---
+title: projects index
+type: index
+updated: 2026-06-28
+---
+
+# Projects
+
+| File | Summary |
+|------|---------|
+| [WP装备能源部EPR报告生成](wp-platform-epr-report.md) | 自动生成EPR绩效考核报告，Excel数据→KPI计算→DOCX输出 |

@@ -1,0 +1,51 @@
+# -*- coding: utf-8 -*-
+"""Search for budget prices in Excel files"""
+import sys, os
+sys.path.insert(0, 'D:\\soft\\work-flow\\wp-platform')
+import openpyxl
+
+# Search 2026年绩效考核计算.xlsx for price-related data
+path = 'D:\\soft\\work-flow\\wp-platform\\data\\templates\\2026年绩效考核计算.xlsx'
+wb = openpyxl.load_workbook(path, data_only=True)
+
+for sn in wb.sheetnames:
+    ws = wb[sn]
+    found = False
+    for r in range(1, min(ws.max_row + 1, 200)):
+        for c in range(1, min(ws.max_column + 1, 30)):
+            v = ws.cell(r, c).value
+            if v is not None and isinstance(v, str):
+                if '单价' in v or '价格' in v or 'price' in v.lower() or 'harga' in v.lower() or 'USD/' in v or '预算' in v:
+                    if not found:
+                        print(f"\n=== {sn} (Found prices) ===")
+                        found = True
+                    # Print surrounding cells
+                    nearby = []
+                    for dc in range(-1, 4):
+                        cc = c + dc
+                        if 1 <= cc <= ws.max_column:
+                            vv = ws.cell(r, cc).value
+                            nearby.append(str(vv)[:30] if vv is not None else "")
+                    print(f"  R{r}C{c}: {v} | {' | '.join(nearby)}")
+                    break
+
+# Also search in 附件4
+path2 = 'D:\\soft\\work-flow\\wp-platform\\data\\templates\\附件4 - 2026年绩效管理专项考核细则 Lampiran 4 - Rincian Ketentuan Khusus Penilaian Kinerja.xlsx'
+wb2 = openpyxl.load_workbook(path2, data_only=True)
+
+for sn in wb2.sheetnames:
+    ws = wb2[sn]
+    for r in range(1, min(ws.max_row + 1, 100)):
+        for c in range(1, min(ws.max_column + 1, 10)):
+            v = ws.cell(r, c).value
+            if v is not None and isinstance(v, str):
+                if '单价' in v or '价格' in v or 'harga' in v.lower():
+                    print(f"\n=== {sn} (Found prices) ===")
+                    nearby = []
+                    for dc in range(-1, 4):
+                        cc = c + dc
+                        if 1 <= cc <= ws.max_column:
+                            vv = ws.cell(r, cc).value
+                            nearby.append(str(vv)[:40] if vv is not None else "")
+                    print(f"  R{r}C{c}: {v} | {' | '.join(nearby)}")
+                    break

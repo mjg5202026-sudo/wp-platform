@@ -1,0 +1,214 @@
+# -*- coding: utf-8 -*-
+"""
+数据中心 - 路由
+Excel 上传/预览/导入
+"""
+import os
+import uuid
+from datetime import datetime
+from flask import Blueprint, request, jsonify, current_app
+from werkzeug.utils import secure_filename
+
+from backend.models import db, OperationImpactFactor, MaterialConsumption, EnergyConsumption
+from backend.services.excel_service import auto_import, import_impact_factors, import_materials
+from backend.utils.excel_utils import get_test_data, load_workbook, detect_header_row, parse_header_row
+
+data_bp = Blueprint("data", __name__)
+
+ALLOWED_EXTENSIONS = {".xlsx", ".xls", ".csv"}
+
+
+def allowed_file(filename: str) -> bool:
+    """???????????"""
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in ALLOWED_EXTENSIONS
+
+
+@data_bp.route("/upload", methods=["POST"])
+def upload_file():
+    """????? Excel ??"""
+    if "file" not in request.files:
+        return jsonify({"status": "error", "message": "?????"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"status": "error", "message": "?????"}), 400
+
+    if not allowed_file(file.filename):
+        return jsonify({"status": "error", "message": f"???????????: {ALLOWED_EXTENSIONS}"}), 400
+
+    table_name = request.form.get("table", "")
+
+    # ????
+    upload_dir = current_app.config.get("UPLOAD_DIR", "data/uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+
+    ext = os.path.splitext(file.filename)[1]
+    saved_name = f"{uuid.uuid4().hex}{ext}"
+    save_path = os.path.join(upload_dir, saved_name)
+    file.save(save_path)
+
+    # ????
+    try:
+        result = auto_import(save_path, table_name)
+        return jsonify({
+            "status": result.to_dict()["status"],
+            "message": f"???? {result.success} ???",
+            "detail": result.to_dict(),
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"????: {str(e)}"
+        }), 500
+
+
+@data_bp.route("/preview", methods=["POST"])
+def preview_file():
+    """?? Excel ???? (???)"""
+    if "file" not in request.files:
+        return jsonify({"status": "error", "message": "?????"}), 400
+
+    file = request.files["file"]
+    if not allowed_file(file.filename):
+        return jsonify({"status": "error", "message": "????????"}), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    saved_name = f"preview_{uuid.uuid4().hex}{ext}"
+    save_path = os.path.join(current_app.config.get("UPLOAD_DIR", "data/uploads"), saved_name)
+    file.save(save_path)
+
+    try:
+        wb = load_workbook(save_path)
+        sheets = []
+
+        if hasattr(wb, "sheet_names"):
+            for sn in wb.sheet_names():
+                ws = wb.sheet_by_name(sn)
+                preview = {"name": sn, "rows": ws.nrows, "cols": ws.ncols, "data": []}
+                for r in range(min(5, ws.nrows)):
+                    row = []
+                    for c in range(min(10, ws.ncols)):
+                        v = ws.cell_value(r, c)
+                        row.append(str(v)[:50] if v != "" else "")
+                    preview["data"].append(row)
+                sheets.append(preview)
+        else:
+            for sn in wb.sheetnames:
+                ws = wb[sn]
+                preview = {"name": sn, "rows": ws.max_row, "cols": ws.max_column, "data": []}
+                for r in range(1, min(6, ws.max_row + 1)):
+                    row = []
+                    for c in range(1, min(11, ws.max_column + 1)):
+                        v = ws.cell(r, c).value
+                        row.append(str(v)[:50] if v is not None else "")
+                    preview["data"].append(row)
+                sheets.append(preview)
+
+        return jsonify({
+            "status": "ok",
+            "filename": file.filename,
+            "sheets": sheets,
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"??????: {str(e)}"}), 500
+    finally:
+        try:
+            os.remove(save_path)
+        except:
+            pass
+
+
+@data_bp.route("/import", methods=["POST"])
+def import_data():
+    """?????????? (????)"""
+    data = request.get_json() or {}
+    file_path = data.get("path", "")
+    table_name = data.get("table", "")
+
+    if not file_path or not os.path.exists(file_path):
+        return jsonify({"status": "error", "message": "??????"}), 400
+
+    try:
+        result = auto_import(file_path, table_name)
+        return jsonify({
+            "status": result.to_dict()["status"],
+            "message": f"???? {result.success} ???",
+            "detail": result.to_dict(),
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"????: {str(e)}"}), 500
+
+
+@data_bp.route("/test-import", methods=["POST"])
+def test_import():
+    """??????"""
+    records = get_test_data()
+    count = 0
+    for r in records:
+        record = OperationImpactFactor(
+            date=r["date"],
+            shift=r["shift"],
+            team=r["team"],
+            system=r["system"],
+            impact_factor=r["impact_factor"],
+            start_time=r["start_time"],
+            end_time=r["end_time"],
+            impact_minutes=r["impact_minutes"],
+            impact_type=r["impact_type"],
+            cause_analysis=r["cause_analysis"],
+            created_at=datetime.now(),
+        )
+        db.session.add(record)
+        count += 1
+    db.session.commit()
+    return jsonify({"status": "ok", "message": f"???? {count} ?????"})
+
+
+@data_bp.route("/impact-factors", methods=["GET"])
+def get_impact_factors():
+    """???????????"""
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 100, type=int)
+    query = OperationImpactFactor.query.order_by(OperationImpactFactor.date.desc())
+
+    total = query.count()
+    records = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    return jsonify({
+        "data": [r.to_dict() for r in records],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    })
+
+
+@data_bp.route("/impact-factors/statistics", methods=["GET"])
+def get_impact_statistics():
+    """?????????"""
+    from sqlalchemy import func
+
+    total_minutes = db.session.query(func.sum(OperationImpactFactor.impact_minutes)).scalar() or 0
+    total_records = OperationImpactFactor.query.count()
+
+    return jsonify({
+        "data": {
+            "total_records": total_records,
+            "total_impact_minutes": total_minutes,
+            "total_impact_hours": round(total_minutes / 60, 2),
+        }
+    })
+
+
+@data_bp.route("/materials", methods=["GET"])
+def get_materials():
+    """????????"""
+    records = MaterialConsumption.query.order_by(MaterialConsumption.date.desc()).limit(200).all()
+    return jsonify({"data": [r.to_dict() for r in records], "total": len(records)})
+
+
+@data_bp.route("/energy", methods=["GET"])
+def get_energy():
+    """????????"""
+    records = EnergyConsumption.query.order_by(EnergyConsumption.date.desc()).limit(200).all()
+    return jsonify({"data": [r.to_dict() for r in records], "total": len(records)})

@@ -1,0 +1,20 @@
+# -*- coding: utf-8 -*-
+"""Try to extract any text from PDF using pdfminer with detailed settings."""
+from pdfminer.high_level import extract_text
+from pdfminer.layout import LAParams
+
+f = r'D:\工作\装备能源\固定资产\废铁销售\CV MENEMBUS BATAS-PENAWARAN(1).pdf'
+out = r'C:\Users\dell\.claude\projects\d--soft-python-vscode-Daily-plan\docx_extract\CV_MENEMBUS_BATAS.txt'
+
+laparams = LAParams(
+    detect_vertical=True,
+    all_texts=True,
+)
+text = extract_text(f, laparams=laparams)
+with open(out, 'w', encoding='utf-8') as fout:
+    fout.write(text)
+
+print('Chars:', len(text))
+print('Lines:', text.count('\n'))
+print('---')
+print(text[:3000])

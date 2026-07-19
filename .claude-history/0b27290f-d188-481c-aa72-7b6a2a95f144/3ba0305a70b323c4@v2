@@ -1,0 +1,30 @@
+# -*- coding: utf-8 -*-
+"""Read EPR Word template structure"""
+import sys, os
+sys.path.insert(0, 'D:\\soft\\work-flow\\wp-platform')
+
+from docx import Document
+
+path = 'D:\\soft\\work-flow\\wp-platform\\data\\templates\\2026年5月份印尼金川WP公司生产经营绩效考核意见（EPR）20260612.docx'
+doc = Document(path)
+
+print("=== 段落 ===")
+for i, p in enumerate(doc.paragraphs):
+    text = p.text.strip()
+    if text:
+        style = p.style.name if p.style else 'None'
+        fonts = set()
+        sizes = set()
+        for r in p.runs:
+            if r.font.name: fonts.add(r.font.name)
+            if r.font.size: sizes.add(str(r.font.size))
+        print(f'P{i}: [{style}] fonts={fonts} sizes={sizes}')
+        print(f'     {text[:200]}')
+        print()
+
+print("\n=== 表格 ===")
+for ti, table in enumerate(doc.tables):
+    print(f'\nTable {ti}: {len(table.rows)}行 x {len(table.columns)}列')
+    for ri, row in enumerate(table.rows):
+        cells = [cell.text.strip().replace('\n',' ') for cell in row.cells]
+        print(f'  Row{ri}: {cells}')

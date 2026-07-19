@@ -1,0 +1,28 @@
+# -*- coding: utf-8 -*-
+"""Read key management system documents for authority limits"""
+from docx import Document
+import os
+
+folder = 'D:\\工作\\装备能源\\管理制度\\修订\\审定稿'
+
+# Key documents to read
+files = [
+    '印尼金川WP公司固定资产管理制度(1)(1).docx',
+    '印尼金川WP公司固定资产管理制度（修改）.docx',
+    '印尼金川WP公司设备零购管理办法 Peraturan Manajemen Pembelian Peralatan Dalam Jumlah Kecil PT Wanatiara Persada（已上传） .doc',
+    '印尼金川WP公司物资管理制度 Peraturan Manajemen Material PT Wanatiara Persada.doc',
+    '印尼金川WP公司设备设施管理制度 Peraturan Manajemen Peralatan Dan Fasilitas PT Wanatiara Persada.doc',
+    '印尼金川WP公司建设项目招标管理制度.docx',
+    '印尼金川WP公司建设项目管理制度 Peraturan Manajemen Proyek Konstruksi PT.Wanatiara Persada（已上传）.doc',
+]
+
+for fname in files:
+    path = os.path.join(folder, fname)
+    print(f"\n{'='*60}")
+    print(f"=== {fname[:40]} ===")
+    print(f"{'='*60}")
+    doc = Document(path)
+    for i, p in enumerate(doc.paragraphs):
+        t = p.text.strip()
+        if t and ('万' in t or '审批' in t or '决策' in t or '上会' in t or '党委' in t or '董事会' in t or '总裁' in t or '权限' in t or '万元' in t or 'USD' in t or '美金' in t or '限额' in t or '批准' in t or '审议' in t):
+            print(f"P{i}: {t[:250]}")

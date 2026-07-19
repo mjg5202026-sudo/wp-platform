@@ -1,0 +1,3 @@
+@echo off
+set NODE_PATH=%APPDATA%\npm\node_modules
+node -e "var fs=require('fs'),D=require('docx'),p=D.Packer; var OUT='D:\\work_out.docx'; var ch=[new D.Paragraph({children:[new D.TextRun({text:'test'})]})]; var doc=new D.Document({sections:[{children:ch}]}); p.toBuffer(doc).then(function(b){fs.writeFileSync(OUT,b);console.log('OK '+b.length);});"

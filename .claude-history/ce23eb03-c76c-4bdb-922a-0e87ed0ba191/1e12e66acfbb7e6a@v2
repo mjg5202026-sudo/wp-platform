@@ -1,0 +1,31 @@
+# -*- coding: utf-8 -*-
+import zipfile
+from xml.etree import ElementTree as ET
+
+def read_docx(docx_path):
+    ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+    texts = []
+    with zipfile.ZipFile(docx_path, 'r') as z:
+        xml = z.read('word/document.xml')
+        root = ET.fromstring(xml)
+        for t in root.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t'):
+            if t.text:
+                texts.append(t.text)
+    return '\n'.join(texts)
+
+files = [
+    (r'D:\工作\装备能源\检修管理\2026年\年度大修\3#生产线\印尼金川WP公司3#回转窑耐材施工询价文件(1).docx', '询价文件'),
+    (r'D:\工作\装备能源\固定资产\废铁销售\废铁处置申请.docx', '废铁处置申请'),
+    (r'D:\工作\装备能源\固定资产\废铁销售\Laporan_Meeting_Bilingual_Penjualan_Scrap_PT   WP.docx', 'Laporan_Meeting'),
+]
+
+outdir = r'C:\Users\dell\.claude\projects\d--soft-python-vscode-Daily-plan\docx_extract'
+
+for path, name in files:
+    text = read_docx(path)
+    outpath = outdir + '\\' + name + '.txt'
+    with open(outpath, 'w', encoding='utf-8') as f:
+        f.write(text)
+    line_count = len(text.splitlines())
+    char_count = len(text)
+    print('%s: %d lines, %d chars -> %s' % (name, line_count, char_count, outpath))

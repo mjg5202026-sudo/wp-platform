@@ -1,0 +1,21 @@
+import openpyxl
+path = r"D:\工作\项目资料\码头堆棚改造\费用结算\码头堆棚施工领料明细(2026年4月1日更新).xlsx"
+wb = openpyxl.load_workbook(path, data_only=True)
+
+# Sheet 2: 费用分析 - full dump
+ws = wb[wb.sheetnames[1]]
+print(f"=== {wb.sheetnames[1]} ===")
+for i, row in enumerate(ws.iter_rows(min_row=1, max_row=ws.max_row, values_only=True), 1):
+    vals = [str(v)[:50] if v is not None else "" for v in row]
+    non_empty = [v for v in vals if v]
+    if non_empty:
+        print(f"R{i}: {' | '.join(non_empty)}")
+
+print("\n\n=== Sheet 1 合计列 ===")
+ws1 = wb[wb.sheetnames[0]]
+# Column 21 is 合计
+for i, row in enumerate(ws1.iter_rows(min_row=2, max_row=10, values_only=True), 2):
+    label = str(row[0])[:40] if row[0] else ""
+    total = row[20] if len(row) > 20 and row[20] else ""
+    if label:
+        print(f"R{i}: {label} => {total}")

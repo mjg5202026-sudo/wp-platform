@@ -1,0 +1,170 @@
+# -*- coding: utf-8 -*-
+import xlrd, sys, io
+from collections import defaultdict
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+wb = xlrd.open_workbook(r'D:\soft\work-flow\wp-platform\data\templates\影响作业率因素统计 2026(4).xls')
+sh = wb.sheet_by_index(0)
+datemode = wb.datemode
+
+def hex_id(s):
+    return s.encode('utf-8').hex()
+
+# ==== 排除原因 ====
+def should_exclude_reason(reason_str):
+    h = hex_id(reason_str)
+    if h == 'e7949fe4baa7e7bb84e7bb87': return True  # 生产组织
+    if h == 'e8aea1e58892e680a7e6a380e4bfae': return True  # 计划性检修
+    if 'e4bf9de99a9c' in h: return True  # 保障
+    if 'e8bda6e8be86' in h: return True  # 车辆
+    return False
+
+def is_dianlu(line_str):
+    return hex_id(line_str).endswith('e794b5e78289')
+
+def is_limo(factor_str):
+    return 'e7ab8be7a3a8' in hex_id(factor_str)  # 立磨
+
+def line_num(line_str):
+    h = hex_id(line_str)
+    for n, p in [(1,'31'),(2,'32'),(3,'33')]:
+        if h.startswith(p): return n
+    return 0
+
+# ==== 读取 ====
+records = []
+for r in range(1, sh.nrows):
+    v = sh.cell_value(r, 0)
+    if isinstance(v, (int, float)) and v > 40000:
+        t = xlrd.xldate_as_tuple(v, datemode)
+        if t[1] == 6 and t[0] == 2026:
+            line = str(sh.cell_value(r, 3)).strip()
+            reason = str(sh.cell_value(r, 9)).strip()
+            factor = str(sh.cell_value(r, 4)).strip()
+            mins = sh.cell_value(r, 7)
+            ln = line_num(line)
+            if 1 <= ln <= 3 and isinstance(mins, (int, float)) and mins > 0:
+                if not should_exclude_reason(reason):
+                    records.append({
+                        'day': t[2], 'ln': ln,
+                        'factor': factor, 'mins': mins,
+                        'is_dianlu': is_dianlu(line),
+                        'is_limo': is_limo(factor),
+                    })
+
+# ==== 统一去重叠：按 (日期, 线号, 因素描述) 分组取MAX ====
+#   - 非立磨: 组内所有设备取MAX
+#   - 立磨:    组内只取电炉的MAX（如果组内无电炉记录则为0）
+groups = defaultdict(list)
+for rec in records:
+    key = (rec['day'], rec['ln'], rec['factor'])
+    groups[key].append(rec)
+
+line_own = {1:0.0, 2:0.0, 3:0.0}
+line_limo = {1:0.0, 2:0.0, 3:0.0}
+factor_own = defaultdict(float)
+factor_limo = defaultdict(float)
+
+for (day, ln, factor), recs in groups.items():
+    is_limo_event = any(r['is_limo'] for r in recs)
+    if is_limo_event:
+        # 立磨事件：只取电炉的最大值
+        dianlu_mins = [r['mins'] for r in recs if r['is_dianlu']]
+        if dianlu_mins:
+            val = max(dianlu_mins)
+            line_limo[ln] += val
+            factor_limo[factor] += val
+    else:
+        # 非立磨事件：取所有设备MAX
+        val = max(r['mins'] for r in recs)
+        line_own[ln] += val
+        factor_own[factor] += val
+
+# ==== 输出结果 ====
+DAYS = 29
+LINE_MIN = DAYS * 24 * 60  # 41760
+
+total_own = sum(line_own.values())
+total_limo = sum(line_limo.values())
+total_all = total_own + total_limo
+
+print("=" * 72)
+print("  6月生产线故障率分析（立磨公辅单独统计，其他计入综合）")
+print("=" * 72)
+print(f"  期间: 6月1日-29日 | 运行: 1#/2#/3#线 | 排除: 生产组织/计划性检修/保障部")
+print(f"  总可用线时: 3线 x {DAYS}d x 24h = {DAYS*24*3} 线·小时")
+print()
+
+print("─" * 72)
+hd = f"  {'生产线':>5} {'自身停机':>18} {'立磨影响(电炉侧)':>20} {'综合停机':>14} {'自身故障率':>10} {'综合故障率':>10}"
+print(hd)
+print("─" * 72)
+for ln in [1,2,3]:
+    own, limo = line_own[ln], line_limo[ln]
+    total_ln = own + limo
+    or_ = own / LINE_MIN * 100
+    tr_ = total_ln / LINE_MIN * 100
+    print(f"  {ln}#线: {own:>8.0f}min ({own/60:>5.1f}h)  {limo:>8.0f}min ({limo/60:>5.1f}h)  {total_ln:>8.0f}min ({total_ln/60:>5.1f}h)  {or_:>8.2f}%  {tr_:>8.2f}%")
+print("─" * 72)
+avg_own = total_own / (LINE_MIN*3) * 100
+avg_all = total_all / (LINE_MIN*3) * 100
+print(f"  {'合计':>5} {total_own:>8.0f}min ({total_own/60:>5.1f}h)  {total_limo:>8.0f}min ({total_limo/60:>5.1f}h)  {total_all:>8.0f}min ({total_all/60:>5.1f}h)  {avg_own:>8.2f}%  {avg_all:>8.2f}%")
+print()
+print(f"  ▲ 公辅系统（立磨）总停机: {total_limo:.0f} min ({total_limo/60:.1f} h)")
+print(f"  ▲ 产线自身平均故障率: {avg_own:.2f}%")
+print(f"  ★ 平均综合故障率: {avg_all:.2f}%")
+print()
+
+# ==== TOP 10 ====
+all_factors = defaultdict(float)
+for f, v in factor_own.items(): all_factors[f] += v
+for f, v in factor_limo.items(): all_factors[f] += v
+
+ranked = sorted(all_factors.items(), key=lambda x: -x[1])
+
+print("影响时间最长的10项因素（去重叠后）:")
+print("─" * 98)
+print(f"  {'#':>3} {'影响因素(具体描述)':<52} {'类型':<6} {'停机(min)':>10} {'小时':>8} {'占比':>7}")
+print("─" * 98)
+for i, (factor, mins) in enumerate(ranked[:10], 1):
+    typ = "公辅" if is_limo(factor) else "产线"
+    disp = factor if len(factor) <= 48 else factor[:45] + "..."
+    print(f"  {i:>3} {disp:<52} {typ:<6} {mins:>10.0f} {mins/60:>8.1f} {mins/total_all*100:>6.1f}%")
+print("─" * 98)
+t10 = sum(m for _, m in ranked[:10])
+print(f"  {'TOP 10 合计':>64} {t10:>10.0f} {t10/60:>8.1f} {t10/total_all*100:>6.1f}%")
+print()
+
+# ==== 各线停机结构 ====
+print("=" * 72)
+print("  各生产线停机结构")
+print("=" * 72)
+for ln in [1,2,3]:
+    own, limo = line_own[ln], line_limo[ln]
+    t = own + limo
+    print(f"  {ln}#线: 产线自身 {own:.0f}min ({own/60:.1f}h) + 立磨影响 {limo:.0f}min ({limo/60:.1f}h) = {t:.0f}min ({t/60:.1f}h)")
+    if t > 0:
+        print(f"         ├─ 立磨公辅占比: {limo/t*100:.1f}%")
+        print(f"         └─ 产线自身占比: {own/t*100:.1f}%")
+    print()
+
+print(f"  ▲ 公辅系统(立磨)总影响: {total_limo:.0f}min | 占总综合停机 {total_limo/total_all*100:.1f}%" if total_all else "")
+print()
+
+# ==== 各线自身TOP 3 ====
+print("=" * 72)
+print("  各生产线自身故障（不含立磨）TOP 3")
+print("=" * 72)
+for ln in [1,2,3]:
+    ln_factors = defaultdict(float)
+    for (day, l, factor), recs in groups.items():
+        if l != ln: continue
+        is_limo_event = any(r['is_limo'] for r in recs)
+        if is_limo_event: continue
+        val = max(r['mins'] for r in recs)
+        ln_factors[factor] += val
+    ranked_ln = sorted(ln_factors.items(), key=lambda x: -x[1])
+    print(f"\n  {ln}#线（自身停机 {line_own[ln]:.0f}min）:")
+    for i, (f, m) in enumerate(ranked_ln[:3], 1):
+        print(f"    {i}. {f[:45]} - {m:.0f}min ({m/60:.1f}h)")

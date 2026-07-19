@@ -1,0 +1,57 @@
+# WP装备能源AI经营管理平台
+
+## 技术栈
+- 后端: Python 3.8 + Flask + SQLAlchemy + SQLite
+- 前端: React 19 + Vite 6 + Ant Design 5 + ECharts 5 + Axios
+- Excel: openpyxl + xlrd | PDF: pdfplumber | 报告: python-docx
+
+## 启动方式
+```bash
+# 后端 (端口 5000)
+cd D:\soft\work-flow\wp-platform && python app.py
+
+# 前端 (端口 3000)
+cd D:\soft\work-flow\wp-platform\frontend && npx vite --port 3000
+```
+
+## 项目结构
+```
+wp-platform/
+├── app.py                     # Flask入口
+├── backend/
+│   ├── __init__.py            # App工厂，注册7个蓝图
+│   ├── config.py              # 配置
+│   ├── models.py              # 9个数据模型
+│   ├── models_kpi.py          # KPI结果模型
+│   ├── routes/                # 7个路由模块
+│   ├── services/              # 业务逻辑层
+│   └── utils/                 # 工具函数
+├── frontend/
+│   └── src/                   # React页面
+└── data/
+    ├── db/wp_platform.db      # 数据库
+    ├── uploads/               # 上传文件
+    └── reports/               # 生成的报告
+```
+
+## 已完成的模块
+- 领导驾驶舱 | 数据中心(Excel/PDF上传) | 故障管理 | 能源管理
+- 专项检查 | 项目管理(Mock) | 绩效考核(焙砂电单耗) | 报告中心(DOCX)
+
+## 待完成（按优先级）
+1. **绩效考核**: 定额材料/柴油/辅材/备件/存货/设备设施/提质增效
+2. AI报告审核
+3. 项目管理对接真实API
+4. 所有报告格式和数据准确性优化
+
+## KPI API
+- `POST /api/assessments/kpi/calc-calcine-power` — 焙砂电单耗计算
+- `POST /api/assessments/kpi/save` — 保存结果
+- `GET  /api/assessments/kpi/list` — 查询列表
+- `DELETE /api/assessments/kpi/delete/:id` — 删除记录
+
+## 开发约定
+- 主分支: HEAD（非git仓库，无版本管理）
+- 数据库: SQLite, data/db/wp_platform.db
+- 所有API返回JSON
+- 前端代理 /api -> localhost:5000

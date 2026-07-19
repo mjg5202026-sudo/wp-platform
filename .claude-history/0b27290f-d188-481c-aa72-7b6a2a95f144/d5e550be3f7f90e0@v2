@@ -1,0 +1,55 @@
+---
+title: "WP装备能源部EPR报告生成"
+type: project
+tags: [wp-platform, epr, 报告生成, python]
+created: "2026-07-01"
+updated: "2026-07-01"
+status: active
+summary: "自动生成印尼金川WP公司装备能源部EPR绩效考核报告（DOCX），从Excel读取数据、计算KPI奖罚、填充表格和段落文字"
+goal: "一键生成月度EPR绩效考核报告，替代人工填表写报告"
+related: ["wp-platform-kpi-rules"]
+---
+
+# WP装备能源部EPR报告生成
+
+## Progress
+
+| Date | Update |
+|------|--------|
+| 2026-07-01 | 5张表格+6段描述文字自动生成完成；设备设施/采购/提质增效待处理 |
+
+## 数据来源
+
+- `2026年绩效考核计算.xlsx` → `26年单耗计算表 (1-5月) (剔除)`
+- PDF能源消耗统计表（焙砂电单耗）
+- 事故故障反馈表（设备设施考核条目）
+
+## 已实现功能
+
+| 部分 | 数据来源 | 状态 |
+|------|---------|------|
+| 焙砂电单耗 → 段落+奖罚 | PDF能源统计表 | ✅ |
+| 定额材料消耗 → 表+段落 | Excel 指标11-15 | ✅ |
+| 柴油消耗 → 表+段落 | Excel 指标10 | ✅ |
+| 备品备件消耗 → 表+段落 | Excel 指标13 | ✅ |
+| 辅材消耗 → 表+段落+奖罚 | Excel 指标14 | ✅ |
+| 存货压降 → 表+段落+奖罚 | Excel 指标15 | ✅ |
+
+## 待处理
+
+- [ ] 设备设施专项 → 从事故事故反馈表生成条目
+- [ ] 采购专项 → 按实际发生情况
+- [ ] 提质增效 → 指标调整后
+
+## 关键文件
+
+- 生成器: `D:\soft\work-flow\wp-platform\backend\services\epr_generator.py`
+- 事故条目生成: `D:\soft\work-flow\gen_accident_entry.py`
+- 模板: `D:\soft\work-flow\wp-platform\data\templates\`
+- 输出: `data/reports/`
+
+## Notes
+
+- EPR = 装备能源部（印尼语简称）
+- 报告格式已基本定型，模板保留字体/格式
+- 需要用户提供事故反馈表和采购材料才能完成剩余部分

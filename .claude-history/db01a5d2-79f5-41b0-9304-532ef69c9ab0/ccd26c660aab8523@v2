@@ -1,0 +1,122 @@
+# -*- coding: utf-8 -*-
+"""
+能源管理 - 路由
+"""
+from datetime import datetime, date
+from flask import Blueprint, request, jsonify
+from sqlalchemy import func, extract
+
+from backend.models import db, EnergyConsumption
+
+energy_bp = Blueprint("energy", __name__)
+
+
+@energy_bp.route("/list", methods=["GET"])
+def get_energy():
+    """????????"""
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    energy_type = request.args.get("type")
+    year = request.args.get("year", type=int)
+
+    query = EnergyConsumption.query
+    if energy_type:
+        query = query.filter(EnergyConsumption.energy_type == energy_type)
+    if year:
+        query = query.filter(extract("YEAR", EnergyConsumption.date) == year)
+
+    query = query.order_by(EnergyConsumption.date.desc())
+    total = query.count()
+    records = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    return jsonify({"data": [r.to_dict() for r in records], "total": total})
+
+
+@energy_bp.route("/summary", methods=["GET"])
+def get_summary():
+    """??????"""
+    year = request.args.get("year", type=int)
+    query = db.session.query(
+        EnergyConsumption.energy_type,
+        func.sum(EnergyConsumption.consumption).label("total_consumption"),
+        func.sum(EnergyConsumption.total_cost).label("total_cost"),
+        func.count(EnergyConsumption.id).label("count"),
+    )
+    if year:
+        query = query.filter(extract("YEAR", EnergyConsumption.date) == year)
+    records = query.group_by(EnergyConsumption.energy_type).all()
+
+    return jsonify({"data": [{
+        "energy_type": r.energy_type,
+        "total_consumption": round(r.total_consumption, 2) if r.total_consumption else 0,
+        "total_cost": round(r.total_cost, 2) if r.total_cost else 0,
+        "count": r.count,
+    } for r in records]})
+
+
+@energy_bp.route("/add", methods=["POST"])
+def add_energy():
+    """????????"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"status": "error", "message": "?????"}), 400
+
+    try:
+        record = EnergyConsumption(
+            date=datetime.strptime(data["date"], "%Y-%m-%d").date(),
+            energy_type=data["energy_type"],
+            consumption=float(data.get("consumption", 0)),
+            unit=data.get("unit", ""),
+            unit_price=float(data.get("unit_price", 0)),
+            total_cost=float(data.get("total_cost", 0)),
+            generation_amount=float(data.get("generation_amount", 0)) if data.get("generation_amount") else 0,
+            consumption_per_unit=float(data.get("consumption_per_unit", 0)) if data.get("consumption_per_unit") else None,
+            remark=data.get("remark", ""),
+            created_at=datetime.now(),
+        )
+        db.session.add(record)
+        db.session.commit()
+        return jsonify({"status": "ok", "message": "????", "data": record.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@energy_bp.route("/monthly-trend", methods=["GET"])
+def get_monthly_trend():
+    """??????"""
+    energy_type = request.args.get("type")
+    year = request.args.get("year", datetime.now().year, type=int)
+
+    query = db.session.query(
+        extract("MONTH", EnergyConsumption.date).label("month"),
+        func.sum(EnergyConsumption.consumption).label("total_consumption"),
+        func.sum(EnergyConsumption.total_cost).label("total_cost"),
+    ).filter(extract("YEAR", EnergyConsumption.date) == year)
+
+    if energy_type:
+        query = query.filter(EnergyConsumption.energy_type == energy_type)
+
+    records = query.group_by(extract("MONTH", EnergyConsumption.date)).order_by(extract("MONTH", EnergyConsumption.date)).all()
+
+    return jsonify({"data": [{
+        "month": int(r.month),
+        "total_consumption": round(r.total_consumption, 2) if r.total_consumption else 0,
+        "total_cost": round(r.total_cost, 2) if r.total_cost else 0,
+    } for r in records]})
+
+
+@energy_bp.route("/analysis", methods=["GET"])
+def get_analysis():
+    """??????"""
+    return jsonify({"data": [], "status": "ok", "message": "??????"})
+
+@energy_bp.route("/delete/<int:record_id>", methods=["DELETE"])
+def delete_energy(record_id):
+    """????"""
+    record = EnergyConsumption.query.get(record_id)
+    if not record:
+        return jsonify({"status": "error", "message": "?????"}), 404
+    db.session.delete(record)
+    db.session.commit()
+    return jsonify({"status": "ok", "message": "????"})

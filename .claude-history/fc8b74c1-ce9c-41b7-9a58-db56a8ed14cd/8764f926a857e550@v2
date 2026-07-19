@@ -1,0 +1,138 @@
+# -*- coding: utf-8 -*-
+"""
+故障率分析引擎 - 输出格式化
+
+支持格式:
+- console: 终端表格（含中文标题）
+- json: JSON 数据结构（API用）
+"""
+
+import sys
+import io
+from .engine import AnalysisResult
+
+
+def format_console(result: AnalysisResult) -> str:
+    """格式化输出到控制台"""
+    # 确保输出UTF-8
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+    lines = []
+    _ = lines.append
+
+    _( "=" * 75)
+    _( "  %s 生产线故障率分析" % result.period_label)
+    _( "=" * 75)
+    _( "  期间: %s ~ %s | 总可用: %.0f 线·小时 | %d条运行线" % (
+        result.start_date.isoformat(), result.end_date.isoformat(),
+        result.total_line_hours, result.running_line_count))
+    _("")
+
+    # ---- 汇总表 ----
+    _("─" * 75)
+    _("  %-5s %18s %20s %14s %10s %10s" % (
+        '生产线', '自身停机', '立磨(含同期检修)', '综合停机', '自身故障率', '综合故障率'))
+    _("─" * 75)
+    for ln in sorted(result.line_results.keys()):
+        lr = result.line_results[ln]
+        _("  %d#线: %8.0fmin (%5.1fh)  %8.0fmin (%5.1fh)  %8.0fmin (%5.1fh)  %8.2f%%  %8.2f%%" % (
+            ln, lr.own_minutes, lr.own_minutes/60,
+            lr.limo_minutes, lr.limo_minutes/60,
+            lr.total_minutes, lr.total_minutes/60,
+            lr.own_rate, lr.comprehensive_rate))
+    _("─" * 75)
+    _("  %-5s %8.0fmin (%5.1fh)  %8.0fmin (%5.1fh)  %8.0fmin (%5.1fh)  %8.2f%%  %8.2f%%" % (
+        '合计', result.total_own_minutes, result.total_own_minutes/60,
+        result.total_limo_minutes, result.total_limo_minutes/60,
+        result.total_all_minutes, result.total_all_minutes/60,
+        result.avg_own_rate, result.avg_comprehensive_rate))
+    _("")
+    _("  ▲ 公辅系统(含同期检修)总影响: %.0f min (%.1f h)" % (
+        result.total_limo_minutes, result.total_limo_minutes/60))
+    _("  ▲ 产线自身平均故障率: %.2f%%" % result.avg_own_rate)
+    _("  ★ 平均综合故障率: %.2f%%" % result.avg_comprehensive_rate)
+    _("")
+
+    # ---- Top 因素 ----
+    _("影响时间最长的%d项因素（按线别展开）:" % len(result.top_factors))
+    _("─" * 120)
+    _("  %3s %5s %-6s %-44s %-10s %10s %8s %7s" % (
+        '#', '线别', '设备', '因素描述', '类型', '停机(min)', '小时', '占比'))
+    _("─" * 120)
+
+    for i, fb in enumerate(result.top_factors, 1):
+        # 合计行
+        disp = fb.factor if len(fb.factor) <= 40 else fb.factor[:37] + "..."
+        _("  %3d %5s %-6s %-44s %-10s %10.0f %8.1f %6.1f%%" % (
+            i, '合计', '-', disp, fb.category,
+            fb.total_minutes, fb.total_minutes/60, fb.total_pct))
+
+        # 按线展开
+        for detail in fb.line_details:
+            _("     %5s %-6s %-44s %-10s %10.0f %8.1f %6.1f%%" % (
+                "%d#线" % detail.line, detail.equipment, '', '',
+                detail.minutes, detail.minutes/60,
+                detail.minutes / result.total_all_minutes * 100 if result.total_all_minutes > 0 else 0))
+
+    _("─" * 120)
+    t10_total = sum(fb.total_minutes for fb in result.top_factors)
+    _("  %70s %10.0f %8.1f %6.1f%%" % (
+        'TOP %d 合计' % len(result.top_factors),
+        t10_total, t10_total/60,
+        t10_total / result.total_all_minutes * 100 if result.total_all_minutes > 0 else 0))
+    _("")
+
+    return "\n".join(lines)
+
+
+def format_json(result: AnalysisResult) -> dict:
+    """格式化为 JSON 字典"""
+    return {
+        "period": result.period_label,
+        "start_date": result.start_date.isoformat(),
+        "end_date": result.end_date.isoformat(),
+        "days": result.days,
+        "running_line_count": result.running_line_count,
+        "total_line_hours": round(result.total_line_hours, 1),
+        "summary": {
+            "avg_own_rate": round(result.avg_own_rate, 2),
+            "avg_comprehensive_rate": round(result.avg_comprehensive_rate, 2),
+            "total_own_minutes": round(result.total_own_minutes, 0),
+            "total_limo_minutes": round(result.total_limo_minutes, 0),
+            "total_minutes": round(result.total_all_minutes, 0),
+        },
+        "line_results": [
+            {
+                "line": lr.line,
+                "own_minutes": round(lr.own_minutes, 0),
+                "own_hours": round(lr.own_minutes / 60, 1),
+                "limo_minutes": round(lr.limo_minutes, 0),
+                "limo_hours": round(lr.limo_minutes / 60, 1),
+                "total_minutes": round(lr.total_minutes, 0),
+                "total_hours": round(lr.total_minutes / 60, 1),
+                "own_rate": round(lr.own_rate, 2),
+                "comprehensive_rate": round(lr.comprehensive_rate, 2),
+            }
+            for lr in sorted(result.line_results.values(), key=lambda x: x.line)
+        ],
+        "top_factors": [
+            {
+                "factor": fb.factor,
+                "total_minutes": round(fb.total_minutes, 0),
+                "total_hours": round(fb.total_minutes / 60, 1),
+                "percentage": round(fb.total_pct, 1),
+                "category": fb.category,
+                "line_details": [
+                    {
+                        "line": d.line,
+                        "equipment": d.equipment,
+                        "minutes": round(d.minutes, 0),
+                        "hours": round(d.minutes / 60, 1),
+                    }
+                    for d in fb.line_details
+                ],
+            }
+            for fb in result.top_factors
+        ],
+    }

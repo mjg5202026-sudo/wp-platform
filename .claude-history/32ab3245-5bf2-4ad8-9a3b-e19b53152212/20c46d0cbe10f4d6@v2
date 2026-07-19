@@ -1,0 +1,41 @@
+# -*- coding: utf-8 -*-
+"""Read form template and notice again"""
+import openpyxl, pdfplumber, os
+
+f = 'D:\\工作\\装备能源\\香港公司\\新建文件夹\\20260715-金川集团股份有限公司关于加强境外企业管控的通知-金集发（2026）134号'
+
+# 1. Read form template
+xlsx_path = os.path.join(f, '20260715-附件：集团总部对境外企业管控权责清单和业务管理流程统计表.xlsx')
+wb = openpyxl.load_workbook(xlsx_path)
+ws = wb.active
+print("=== 表单模板结构 ===")
+for r in range(1, 10):
+    vals = []
+    for c in range(1, 16):
+        v = ws.cell(r, c).value
+        vals.append(str(v)[:40] if v is not None else '')
+    print(f"R{r}: {' | '.join(vals)}")
+
+# Check merged cells
+print("\n=== 合并单元格 ===")
+for mc in ws.merged_cells.ranges:
+    print(f"  {mc}")
+wb.close()
+
+# 2. Read notice PDF key requirements
+pdf_path = os.path.join(f, '20260715-金川集团股份有限公司关于加强境外企业管控的通知-金集发（2026）134号.pdf')
+pdf = pdfplumber.open(pdf_path)
+print(f"\n=== 通知PDF ({len(pdf.pages)}页) 关键词提取 ===")
+for i, page in enumerate(pdf.pages):
+    text = page.extract_text() or ""
+    # 提取关键要求
+    for line in text.split('\n'):
+        if any(kw in line for kw in ['管控', '权责', '清单', '审批', '报批', '备案', '授权', '流程', '总部', '境外']):
+            print(f"  P{i}: {line.strip()[:150]}")
+pdf.close()
+
+# 3. List management system documents
+sys_folder = 'D:\\工作\\装备能源\\管理制度\\修订\\审定稿'
+print("\n=== 管理制度文件 ===")
+for fname in sorted(os.listdir(sys_folder)):
+    print(f"  {fname}")

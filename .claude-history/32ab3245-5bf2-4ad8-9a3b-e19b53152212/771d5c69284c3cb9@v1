@@ -1,0 +1,206 @@
+import React, { useState, useEffect } from 'react'
+import {
+  Card, Row, Col, Table, Tag, Spin, Button, Modal, Form,
+  InputNumber, DatePicker, Select, Input, Space, message, Statistic
+} from 'antd'
+import { PlusOutlined, DeleteOutlined, ThunderboltOutlined, DashboardOutlined } from '@ant-design/icons'
+import ReactECharts from 'echarts-for-react'
+import dayjs from 'dayjs'
+import { getEnergyList, getEnergySummary, getEnergyTrend, addEnergyRecord, deleteEnergyRecord } from '../api'
+
+const ENERGY_TYPES = ['?', '??', '??']
+
+const Energy = () => {
+  const [loading, setLoading] = useState(true)
+  const [list, setList] = useState([])
+  const [total, setTotal] = useState(0)
+  const [summary, setSummary] = useState([])
+  const [trend, setTrend] = useState([])
+  const [typeFilter, setTypeFilter] = useState(null)
+  const [addModal, setAddModal] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [form] = Form.useForm()
+
+  const loadData = () => {
+    setLoading(true)
+    const params = {}
+    if (typeFilter) params.type = typeFilter
+    Promise.all([
+      getEnergyList(params),
+      getEnergySummary(),
+      getEnergyTrend({ year: 2026 }),
+    ]).then(([l, s, t]) => {
+      setList(l.data.data)
+      setTotal(l.data.total)
+      setSummary(s.data.data)
+      setTrend(t.data.data)
+    }).finally(() => setLoading(false))
+  }
+
+  useEffect(() => { loadData() }, [typeFilter])
+
+  const handleAdd = async () => {
+    try {
+      const values = await form.validateFields()
+      setSubmitting(true)
+      const payload = {
+        ...values,
+        date: values.date.format('YYYY-MM-DD'),
+        consumption: values.consumption || 0,
+        unit_price: values.unit_price || 0,
+        total_cost: (values.consumption || 0) * (values.unit_price || 0),
+      }
+      await addEnergyRecord(payload)
+      message.success('????')
+      setAddModal(false)
+      form.resetFields()
+      loadData()
+    } catch (e) {
+      if (e.errorFields) return
+      message.error('????: ' + (e.response?.data?.message || e.message))
+    }
+    setSubmitting(false)
+  }
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteEnergyRecord(id)
+      message.success('????')
+      loadData()
+    } catch (e) {
+      message.error('????')
+    }
+  }
+
+  const columns = [
+    { title: '??', dataIndex: 'date', width: 100 },
+    { title: '????', dataIndex: 'energy_type', width: 80, render: v => <Tag color={v === '?' ? 'gold' : v === '??' ? 'green' : 'blue'}>{v}</Tag> },
+    { title: '???', dataIndex: 'consumption', width: 100, render: (v, r) => `${v} ${r.unit || ''}` },
+    { title: '??', dataIndex: 'unit_price', width: 80, render: v => `?${v}` },
+    { title: '???', dataIndex: 'total_cost', width: 100, render: v => `?${(v || 0).toFixed(2)}` },
+    { title: '???', dataIndex: 'generation_amount', width: 80, render: v => v ? `${v}kWh` : '-' },
+    { title: '??', dataIndex: 'consumption_per_unit', width: 60, render: v => v || '-' },
+    {
+      title: '??', width: 60, render: (_, r) => (
+        <Button type="link" danger size="small" icon={<DeleteOutlined />} onClick={() => handleDelete(r.id)} />
+      ),
+    },
+  ]
+
+  const trendOption = {
+    tooltip: { trigger: 'axis' },
+    legend: { data: ENERGY_TYPES, top: 0 },
+    grid: { left: 50, right: 20, top: 40, bottom: 30 },
+    xAxis: { type: 'category', data: Array.from({ length: 12 }, (_, i) => `${i + 1}?`) },
+    yAxis: { type: 'value', name: '???' },
+    series: ENERGY_TYPES.map((t, i) => ({
+      name: t, type: 'line', smooth: true,
+      data: trend.filter(r => r.energy_type === t).map(r => r.total_consumption),
+      itemStyle: { color: ['#1677ff', '#52c41a', '#faad14'][i] },
+    })),
+    dataset: { source: trend.map(r => ({ month: r.month, ...ENERGY_TYPES.reduce((a, t) => ({ ...a, [t]: r.energy_type === t ? r.total_consumption : 0 }), {}) })) },
+  }
+
+  if (loading && !list.length) return <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <h2>????</h2>
+        <p>????????? ? ? / ?? / ??</p>
+      </div>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        {summary.map(s => (
+          <Col xs={8} key={s.energy_type}>
+            <Card size="small" className="stat-card">
+              <div className="stat-label">{s.energy_type}??</div>
+              <div className="stat-value" style={{ fontSize: 20 }}>{s.total_consumption?.toLocaleString()}</div>
+              <div style={{ fontSize: 12, color: '#999' }}>??: ?{(s.total_cost || 0).toFixed(2)}</div>
+            </Card>
+          </Col>
+        ))}
+        {summary.length === 0 && ENERGY_TYPES.map(t => (
+          <Col xs={8} key={t}>
+            <Card size="small" className="stat-card">
+              <div className="stat-label">{t}</div>
+              <div className="stat-value" style={{ fontSize: 20, color: '#999' }}>????</div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={14}>
+          <Card title="????" bodyStyle={{ padding: 12 }}>
+            <ReactECharts option={trendOption} style={{ height: 320 }} />
+          </Card>
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card title="????" bodyStyle={{ padding: 12 }}>
+            <div style={{ textAlign: 'center', padding: '60px 0' }}>
+              <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => setAddModal(true)}>
+                ????????
+              </Button>
+              <div style={{ marginTop: 12, color: '#999', fontSize: 13 }}>
+                ?????????????????
+              </div>
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      <Card title="??????" style={{ marginTop: 16 }}
+        extra={
+          <Select placeholder="????" allowClear style={{ width: 120 }} value={typeFilter} onChange={setTypeFilter}>
+            {ENERGY_TYPES.map(t => <Select.Option key={t} value={t}>{t}</Select.Option>)}
+          </Select>
+        }
+      >
+        <Table
+          dataSource={list} columns={columns} rowKey="id" size="small" loading={loading}
+          pagination={{ total, pageSize: 50, showTotal: t => `? ${t} ?` }}
+          scroll={{ x: 700 }}
+        />
+      </Card>
+
+      <Modal
+        title="????????" open={addModal}
+        onOk={handleAdd} onCancel={() => { setAddModal(false); form.resetFields() }}
+        confirmLoading={submitting} width={500}
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item name="date" label="??" rules={[{ required: true, message: '?????' }]}>
+            <DatePicker picker="month" style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="energy_type" label="????" rules={[{ required: true, message: '?????' }]}>
+            <Select>
+              {ENERGY_TYPES.map(t => <Select.Option key={t} value={t}>{t}</Select.Option>)}
+            </Select>
+          </Form.Item>
+          <Form.Item name="consumption" label="???" rules={[{ required: true, message: '??????' }]}>
+            <InputNumber style={{ width: '100%' }} min={0} />
+          </Form.Item>
+          <Form.Item name="unit" label="??">
+            <Select>
+              <Select.Option value="kWh">kWh (?)</Select.Option>
+              <Select.Option value="?">? (??)</Select.Option>
+              <Select.Option value="???">??? (??)</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="unit_price" label="?? (?)">
+            <InputNumber style={{ width: '100%' }} min={0} precision={4} />
+          </Form.Item>
+          <Form.Item name="generation_amount" label="??? (kWh)">
+            <InputNumber style={{ width: '100%' }} min={0} />
+          </Form.Item>
+          <Form.Item name="remark" label="??">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+export default Energy

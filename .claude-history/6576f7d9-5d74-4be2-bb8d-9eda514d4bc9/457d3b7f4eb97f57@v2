@@ -1,0 +1,726 @@
+const fs = require('fs');
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+        Header, Footer, AlignmentType, HeadingLevel, BorderStyle, WidthType,
+        ShadingType, PageNumber, PageBreak, VerticalAlign } = require('docx');
+
+// =============== COMMON HELPERS ===============
+
+const a4Width = 11906;
+const a4Height = 16838;
+const margin = 1440;
+const contentWidth = a4Width - 2 * margin; // 9026
+
+const thinBorder = { style: BorderStyle.SINGLE, size: 1, color: "000000" };
+const borders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
+const noBorder = { style: BorderStyle.NONE, size: 0 };
+const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+const cellMargins = { top: 60, bottom: 60, left: 80, right: 80 };
+const cellMarginsWide = { top: 80, bottom: 80, left: 120, right: 120 };
+
+function headingCell(text, width, opts = {}) {
+    return new TableCell({
+        borders,
+        width: { size: width, type: WidthType.DXA },
+        shading: { fill: opts.fill || "D5E8F0", type: ShadingType.CLEAR },
+        margins: cellMarginsWide,
+        verticalAlign: VerticalAlign.CENTER,
+        children: [new Paragraph({
+            alignment: opts.align || AlignmentType.CENTER,
+            children: [new TextRun({ text, bold: true, font: "Arial", size: opts.size || 20 })]
+        })]
+    });
+}
+
+function dataCell(text, width, opts = {}) {
+    return new TableCell({
+        borders,
+        width: { size: width, type: WidthType.DXA },
+        margins: cellMarginsWide,
+        verticalAlign: VerticalAlign.CENTER,
+        children: [new Paragraph({
+            alignment: opts.align || AlignmentType.CENTER,
+            children: [new TextRun({ text: String(text || ''), font: "Arial", size: opts.size || 18, bold: !!opts.bold })]
+        })]
+    });
+}
+
+function emptyPara(text, opts = {}) {
+    return new Paragraph({
+        spacing: { before: opts.before || 0, after: opts.after || 0 },
+        alignment: opts.align || AlignmentType.LEFT,
+        children: [new TextRun({ text: text || '', font: "Arial", size: opts.size || 22, bold: !!opts.bold, ...(opts.italics ? { italics: true } : {}) })]
+    });
+}
+
+function lineSpace(before, after) {
+    return new Paragraph({ spacing: { before, after }, children: [] });
+}
+
+function sectionTitle(text) {
+    return new Paragraph({
+        spacing: { before: 200, after: 100 },
+        alignment: AlignmentType.LEFT,
+        children: [new TextRun({ text, font: "Arial", size: 24, bold: true })]
+    });
+}
+
+// =============== DOCUMENT 1: 3#、1#电炉耐材施工报告 ===============
+
+const efReport = new Document({
+    styles: {
+        default: { document: { run: { font: "Arial", size: 22 } } },
+    },
+    sections: [{
+        properties: {
+            page: {
+                size: { width: a4Width, height: a4Height },
+                margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+            }
+        },
+        headers: {
+            default: new Header({
+                children: [new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: "装备能源部", font: "Arial", size: 18, color: "666666" })]
+                })]
+            })
+        },
+        footers: {
+            default: new Footer({
+                children: [new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: "第 ", font: "Arial", size: 16 }), new TextRun({ children: [PageNumber.CURRENT], font: "Arial", size: 16 }), new TextRun({ text: " 页", font: "Arial", size: 16 })]
+                })]
+            })
+        },
+        children: [
+            // Title
+            new Paragraph({
+                spacing: { before: 400, after: 100 },
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "关于冶炼部3#、1#电炉耐材施工的报告", font: "Arial", size: 32, bold: true })]
+            }),
+            new Paragraph({
+                spacing: { after: 300 },
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "Laporan Perihal Konstruksi Pemasangan Refractory Material EF No.3 & No.1 Divisi Smelter", font: "Arial", size: 20, italics: true, color: "333333" })]
+            }),
+
+            // Signature block
+            new Table({
+                width: { size: contentWidth, type: WidthType.DXA },
+                columnWidths: [3000, 6026],
+                rows: [
+                    new TableRow({
+                        children: [
+                            new TableCell({ borders: noBorders, width: { size: 3000, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "审签人 DiSetujui Oleh", font: "Arial", size: 20 })] })] }),
+                            new TableCell({ borders: noBorders, width: { size: 6026, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "郭三军 Guo Sanjun", font: "Arial", size: 20 })] })] })
+                        ]
+                    }),
+                    new TableRow({
+                        children: [
+                            new TableCell({ borders: noBorders, width: { size: 3000, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "审核人 Diperiksa Oleh", font: "Arial", size: 20 })] })] }),
+                            new TableCell({ borders: noBorders, width: { size: 6026, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "张继武 Zhang Jiwu", font: "Arial", size: 20 })] })] })
+                        ]
+                    }),
+                    new TableRow({
+                        children: [
+                            new TableCell({ borders: noBorders, width: { size: 3000, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "编制人 Disusun Oleh", font: "Arial", size: 20 })] })] }),
+                            new TableCell({ borders: noBorders, width: { size: 6026, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "马军 Ma Jun", font: "Arial", size: 20 })] })] })
+                        ]
+                    }),
+                ]
+            }),
+
+            // Department & Date
+            new Paragraph({
+                spacing: { before: 100, after: 200 },
+                children: [
+                    new TextRun({ text: "装备能源部", font: "Arial", size: 22 }),
+                    new TextRun({ text: "\t\t\t\t\t\t\t2026年7月8日", font: "Arial", size: 22 }),
+                ],
+                tabStops: [{ type: 2, position: 9360 }] // RIGHT tab
+            }),
+            new Paragraph({
+                spacing: { after: 200 },
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "8 Juli 2026", font: "Arial", size: 20, italics: true })]
+            }),
+
+            lineSpace(0, 100),
+
+            // Body - Introduction
+            new Paragraph({
+                spacing: { before: 100, after: 100 },
+                children: [
+                    new TextRun({ text: "根据公司镍铁升级改造项目工期计划进度安排，拟于3#生产线改造期间，对3#电炉及1#电炉炉体、炉顶耐火材料重新砌筑。本项施工初期计划自主实施，拟通过招聘筑炉工、焊工、小工等专业工种完成作业。经测算，自主施工整体费用超出前期估算价格。为此，公司邀请四家单位，针对3#、1#电炉砌筑施工项目进行报价，并要求施工单位将增值税、所得税、食宿、工器具辅材等费用全部包含在报价内。现就3#、1#电炉砌筑施工相关事宜作如下汇报。", font: "Arial", size: 22 })
+                ]
+            }),
+            new Paragraph({
+                spacing: { after: 200 },
+                children: [
+                    new TextRun({ text: "Berdasarkan pengaturan dan kemajuan jadwal proyek upgrading FeNi perusahaan, dalam periode upgrading line 3 direncanakan akan dilakukan konstruksi ulang terhadap refractory material bagian badan dan atap EF No. 3 dan No. 1. Perusahaan mengundang empat perusahaan untuk memberikan penawaran harga atas pekerjaan konstruksi EF No. 3 dan No. 1. Berikut disampaikan laporan mengenai hal-hal terkait.", font: "Arial", size: 20, italics: true, color: "333333" })
+                ]
+            }),
+
+            // Section: Scope
+            sectionTitle("施工内容 Ruang Lingkup Pekerjaan"),
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "冶炼部3#电炉炉体耐火材料砌筑、炉顶耐火材料砌筑；1#电炉炉体耐火材料砌筑、炉顶耐火材料砌筑施工。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { after: 200 },
+                children: [new TextRun({ text: "Konstruksi refractory material pada bagian badan dan atap EF No. 3 dan EF No. 1 Divisi Smelter.", font: "Arial", size: 20, italics: true, color: "333333" })]
+            }),
+
+            // Section: Timeline
+            sectionTitle("施工工期 Periode Konstruksi"),
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "结合电炉砌筑施工相关经验，拟定每台电炉炉体砌筑工期为25天，炉盖耐火材料施工工期为15天，实际施工进度将根据现场技术改造具体情况动态调整。两台电炉计划交叉或同步施工，总工期控制在50天以内。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { after: 200 },
+                children: [new TextRun({ text: "Periode konstruksi untuk setiap EF: 25 hari untuk badan furnace dan 15 hari untuk atap furnace. Total periode konstruksi untuk dua unit diperkirakan maksimal 50 hari.", font: "Arial", size: 20, italics: true, color: "333333" })]
+            }),
+
+            // Section: Bidding & Costs
+            sectionTitle("施工单位及费用 Kontraktor dan biaya"),
+
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "公司邀请后英集团、江苏鑫鑫（PT.GET）、山东荣华、建设公司四家单位就3#、1#电炉耐材施工进行报价。报价情况如下：", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { after: 100 },
+                children: [new TextRun({ text: "Perusahaan mengundang empat perusahaan untuk memberikan penawaran harga atas pekerjaan konstruksi EF No. 3 dan No. 1.", font: "Arial", size: 20, italics: true, color: "333333" })]
+            }),
+
+            // Quotation table for 3#、1# electric furnaces
+            new Paragraph({
+                spacing: { before: 100, after: 60 },
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "表1  3#、1#电炉耐材施工报价对比表", font: "Arial", size: 22, bold: true })]
+            }),
+            new Paragraph({
+                spacing: { after: 60 },
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "Tabel 1. Perbandingan Penawaran Harga Konstruksi EF No. 3 dan No. 1", font: "Arial", size: 18, italics: true })]
+            }),
+
+            // Table 1 data -报价对比
+            // Columns: 序号 | 报价单位 | 施工报价(万元/台) | 报价构成 | 一次谈价(万元/台) | 资质情况
+            (() => {
+                const colW = [400, 1400, 1400, 2100, 1400, 2326];
+                const header = () => [
+                    headingCell("序号", colW[0], { size: 18 }),
+                    headingCell("报价单位", colW[1], { size: 18 }),
+                    headingCell("施工报价\n(万元/台)", colW[2], { size: 18 }),
+                    headingCell("报价构成", colW[3], { size: 18 }),
+                    headingCell("一次谈价\n(万元/台)", colW[4], { size: 18 }),
+                    headingCell("资质及响应情况", colW[5], { size: 18 }),
+                ];
+
+                const row = (no, name, price, composition, negotiated, qualification) => [
+                    dataCell(no, colW[0], { size: 17 }),
+                    dataCell(name, colW[1], { size: 17 }),
+                    dataCell(price, colW[2], { size: 17 }),
+                    dataCell(composition, colW[3], { align: AlignmentType.LEFT, size: 16 }),
+                    dataCell(negotiated, colW[4], { size: 17 }),
+                    dataCell(qualification, colW[5], { align: AlignmentType.LEFT, size: 16 }),
+                ];
+
+                return new Table({
+                    width: { size: contentWidth, type: WidthType.DXA },
+                    columnWidths: colW,
+                    rows: [
+                        new TableRow({ children: header() }),
+                        new TableRow({ children: row("1", "后英集团", "149.3", "不含炉盖\n未实质性响应", "—", "不含炉盖；无安全生产许可证；无JK3认证") }),
+                        new TableRow({ children: row("2", "江苏鑫鑫\n(PT.GET)", "274.94", "人工费+机票+签证+食宿+\n工具费+安全文明施工+\n印尼增值税+中国所得税", "270.66", "仅2024年1项业绩且无业主章；JK3申办中") }),
+                        new TableRow({ children: row("3", "山东荣华", "299.39", "人工费+管理费+利润+\n工器具费+安全文明施工+\n风险+增值税+所得税+食宿", "294.98", "无印尼当地施工劳务许可；无JK3认证") }),
+                        new TableRow({ children: row("4", "建设公司", "294.1338", "全费用\n（包含所有费用）", "273.80", "报价文件均响应询价文件要求；\n资质齐全") }),
+                    ]
+                });
+            })(),
+
+            new Paragraph({
+                spacing: { before: 100, after: 60 },
+                children: [new TextRun({ text: "注：以上报价均为单台电炉价格（含炉盖砌筑）。本次询价要求施工单位将增值税、所得税、食宿、工器具辅材等费用全部包含在报价内。印尼政府规定增值税税率为12%，实际按11%计算。食宿标准按照印尼金川WP公司最新OBI园区服务项目表收费计算。", font: "Arial", size: 20 })]
+            }),
+            new Paragraph({
+                spacing: { after: 200 },
+                children: [new TextRun({ text: "Catatan: Harga di atas adalah harga per unit EF (termasuk konstruksi atap).", font: "Arial", size: 18, italics: true, color: "333333" })]
+            }),
+
+            // Comparison with 4# actual costs
+            sectionTitle("与4#电炉耐材施工实际费用对比 Perbandingan Biaya Aktual dengan EF No.4"),
+
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "为便于评审，现将本次报价与4#电炉耐材施工实际发生费用进行对比分析如下：", font: "Arial", size: 22 })]
+            }),
+
+            // Cost comparison table
+            new Paragraph({
+                spacing: { before: 100, after: 60 },
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "表2  本次报价与4#电炉耐材施工实际费用对比表", font: "Arial", size: 22, bold: true })]
+            }),
+
+            (() => {
+                const colW = [2600, 1500, 1500, 1700, 1726];
+                const rows = [
+                    [headingCell("费用项目", colW[0], { size: 18 }),
+                     headingCell("4#电炉实际\n（万元）", colW[1], { size: 18 }),
+                     headingCell("建设公司报价\n（万元/台）", colW[2], { size: 18 }),
+                     headingCell("江苏鑫鑫谈价\n（万元/台）", colW[3], { size: 18 }),
+                     headingCell("山东荣华谈价\n（万元/台）", colW[4], { size: 18 })],
+
+                    ["施工合同价/含税报价", "161.601", "273.80\n(全费用)", "270.66\n(全费用)", "294.98\n(全费用)"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: i === 0 })),
+                    ["增值税(11%)", "17.776", "已包含", "已包含", "已包含"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: i === 0 })),
+                    ["所得税(10%)", "16.160", "已包含", "已包含", "已包含"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: i === 0 })),
+                    ["食宿费用", "58.360", "已包含", "已包含", "已包含"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: i === 0 })),
+                    ["工器具辅材", "4.530", "已包含", "已包含", "已包含"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: i === 0 })),
+                    ["合计", "258.427", "273.80", "270.66", "294.98"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: true })),
+                ];
+                return new Table({
+                    width: { size: contentWidth, type: WidthType.DXA },
+                    columnWidths: colW,
+                    rows: rows.map(r => new TableRow({ children: r }))
+                });
+            })(),
+
+            new Paragraph({
+                spacing: { before: 80, after: 80 },
+                children: [new TextRun({ text: "从上表对比可以看出：", font: "Arial", size: 22, bold: true })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "1. 4#电炉耐材施工实际总费用为258.427万元（含161.601万元合同价、增值税17.776万元、所得税16.160万元、食宿58.360万元、工器具辅材4.530万元）。其中食宿费用根据施工人员构成（中方22人、印尼方95人）及在岛天数（23-29天）按现行标准测算。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "2. 本次报价中，建设公司经二次谈价后报价273.80万元/台（全费用），较4#电炉实际总费用高出约15.37万元/台，主要原因系本次报价为全费用综合单价，施工单位自行承担了食宿费用，且当前人工成本及辅材价格有所上涨。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "3. 后英集团报价最低（149.3万元/台），但未包含炉盖砌筑，且未实质性响应询价文件，资质不齐全，不建议选用。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "4. 江苏鑫鑫（PT.GET）经谈价后报价270.66万元/台，价格具有竞争力，但业绩证明材料不足（仅2024年1项竣工报告且无业主方盖章），存在一定履约风险。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 200 },
+                children: [new TextRun({ text: "5. 山东荣华报价较高（294.98万元/台），且无印尼当地施工劳务许可及JK3认证，不推荐选用。", font: "Arial", size: 22 })]
+            }),
+
+            // Tax note
+            sectionTitle("税费说明 Keterangan Pajak"),
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "根据印尼政府规定，增值税（PPN）税率为12%，但在实际收取过程中按11%计算。所得税（PPh）按10%税率执行。本次报价中，建设公司全费用报价已包含上述税费，不再另行计取。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { after: 100 },
+                children: [new TextRun({ text: "Sesuai ketentuan Pemerintah Indonesia, tarif PPN adalah 12%, namun dalam pelaksanaan dihitung sebesar 11%. PPh sebesar 10%.", font: "Arial", size: 20, italics: true, color: "333333" })]
+            }),
+
+            // Recommendation
+            sectionTitle("推荐意见 Rekomendasi"),
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "经综合比较各施工单位技术能力、施工经验、资质情况及报价合理性，结合与4#电炉实际费用的对比分析，建议选用建设公司为3#、1#电炉耐材施工单位，推荐理由如下：", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "1. 建设公司全费用报价273.80万元/台（两台电炉合计547.60万元），报价构成清晰透明，包含增值税、所得税、食宿、工器具辅材等所有费用。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "2. 建设公司报价文件均响应询价文件要求，资质齐全，具备相应的施工能力和组织经验。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "3. 经二次谈价后，建设公司报价从294.1338万元/台降至273.80万元/台，降幅约6.9%，价格趋于合理。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 200 },
+                children: [new TextRun({ text: "4. 在确定拟选施工单位后，建议公司再与建设公司进行最终价格谈判，争取进一步降低合同价格。", font: "Arial", size: 22 })]
+            }),
+
+            // Approval request
+            sectionTitle("提请审议事项 Hal yang Diajukan untuk Persetujuan"),
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "建议审议通过冶炼部3#、1#电炉耐材施工报告。", font: "Arial", size: 24, bold: true })]
+            }),
+            new Paragraph({
+                spacing: { after: 60 },
+                children: [new TextRun({ text: "现提交公司总裁办公会议进行审议！", font: "Arial", size: 24, bold: true })]
+            }),
+            new Paragraph({
+                spacing: { after: 60 },
+                children: [new TextRun({ text: "Demikian laporan ini diserahkan untuk dibahas dan disetujui dalam Rapat CEO Perusahaan.", font: "Arial", size: 20, italics: true })]
+            }),
+
+            lineSpace(200, 0),
+
+            // Signature at bottom
+            new Paragraph({
+                spacing: { before: 200 },
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "装备能源部", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "Divisi EPR", font: "Arial", size: 20, italics: true })]
+            }),
+            new Paragraph({
+                spacing: { before: 60 },
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "2026年7月8日", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "8 Juli 2026", font: "Arial", size: 20, italics: true })]
+            }),
+        ]
+    }]
+});
+
+
+// =============== DOCUMENT 2: 3#回转窑耐材施工报告 ===============
+
+const kilnReport = new Document({
+    styles: {
+        default: { document: { run: { font: "Arial", size: 22 } } },
+    },
+    sections: [{
+        properties: {
+            page: {
+                size: { width: a4Width, height: a4Height },
+                margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+            }
+        },
+        headers: {
+            default: new Header({
+                children: [new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: "装备能源部", font: "Arial", size: 18, color: "666666" })]
+                })]
+            })
+        },
+        footers: {
+            default: new Footer({
+                children: [new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: "第 ", font: "Arial", size: 16 }), new TextRun({ children: [PageNumber.CURRENT], font: "Arial", size: 16 }), new TextRun({ text: " 页", font: "Arial", size: 16 })]
+                })]
+            })
+        },
+        children: [
+            // Title
+            new Paragraph({
+                spacing: { before: 400, after: 100 },
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "关于冶炼部3#回转窑耐材施工的报告", font: "Arial", size: 32, bold: true })]
+            }),
+            new Paragraph({
+                spacing: { after: 300 },
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "Laporan Perihal Konstruksi Pemasangan Refractory Material Rotary Kiln No. 3 Divisi Smelter", font: "Arial", size: 20, italics: true, color: "333333" })]
+            }),
+
+            // Signature block
+            new Table({
+                width: { size: contentWidth, type: WidthType.DXA },
+                columnWidths: [3000, 6026],
+                rows: [
+                    new TableRow({ children: [
+                        new TableCell({ borders: noBorders, width: { size: 3000, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "审签人 DiSetujui Oleh", font: "Arial", size: 20 })] })] }),
+                        new TableCell({ borders: noBorders, width: { size: 6026, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "郭三军 Guo Sanjun", font: "Arial", size: 20 })] })] })
+                    ]}),
+                    new TableRow({ children: [
+                        new TableCell({ borders: noBorders, width: { size: 3000, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "审核人 Diperiksa Oleh", font: "Arial", size: 20 })] })] }),
+                        new TableCell({ borders: noBorders, width: { size: 6026, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "张继武 Zhang Jiwu", font: "Arial", size: 20 })] })] })
+                    ]}),
+                    new TableRow({ children: [
+                        new TableCell({ borders: noBorders, width: { size: 3000, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "编制人 Disusun Oleh", font: "Arial", size: 20 })] })] }),
+                        new TableCell({ borders: noBorders, width: { size: 6026, type: WidthType.DXA }, margins: cellMargins, children: [new Paragraph({ children: [new TextRun({ text: "马军 Ma Jun", font: "Arial", size: 20 })] })] })
+                    ]}),
+                ]
+            }),
+
+            new Paragraph({
+                spacing: { before: 100, after: 200 },
+                children: [
+                    new TextRun({ text: "装备能源部", font: "Arial", size: 22 }),
+                    new TextRun({ text: "\t\t\t\t\t\t\t2026年7月8日", font: "Arial", size: 22 }),
+                ],
+                tabStops: [{ type: 2, position: 9360 }]
+            }),
+            new Paragraph({
+                spacing: { after: 200 },
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "8 Juli 2026", font: "Arial", size: 20, italics: true })]
+            }),
+
+            lineSpace(0, 100),
+
+            // Introduction
+            new Paragraph({
+                spacing: { before: 100, after: 100 },
+                children: [
+                    new TextRun({ text: "根据公司镍铁升级改造项目总体工期安排，拟在3#生产线改造期间，对3#回转窑高温段和中温段损坏耐火材料重新砌筑。本项施工初期计划采用自主施工方式，通过招聘筑炉工、焊工、小工等专业工种完成作业。经测算，自主施工整体费用超出前期估算价格。为此，公司邀请四家单位，针对3#回转窑耐材施工进行报价，并要求施工单位将增值税、所得税、食宿、工器具辅材等费用全部包含在报价内。现就3#回转窑耐材施工相关事宜作如下汇报。", font: "Arial", size: 22 })
+                ]
+            }),
+            new Paragraph({
+                spacing: { after: 200 },
+                children: [
+                    new TextRun({ text: "Sesuai dengan rencana jadwal Proyek Upgrading FeNi Perusahaan, direncanakan selama periode upgrading Line Produksi No. 3, akan dilaksanakan pemasangan kembali Refractory Material pada bagian zona suhu tinggi dan suhu menengah Rotary Kiln No. 3.", font: "Arial", size: 20, italics: true, color: "333333" })
+                ]
+            }),
+
+            // Scope
+            sectionTitle("施工内容 Ruang Lingkup Pekerjaan"),
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "冶炼部3#回转窑高温段约40米、中温段约18米范围内损坏耐火材料的拆除作业，以及锚固钩焊接和耐火材料重新浇注施工。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { after: 200 },
+                children: [new TextRun({ text: "Pekerjaan mencakup pembongkaran refractory material yang rusak, serta pengelasan pengait pengikat dan pengecoran kembali refractory material pada rotary kiln no. 3.", font: "Arial", size: 20, italics: true, color: "333333" })]
+            }),
+
+            // Timeline
+            sectionTitle("施工工期 Periode Konstruksi"),
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "结合回转窑耐材施工经验，计划回转窑耐材拆除工期为25天，锚固钩焊接10天、耐材浇注15天，总工期约50天。实际施工进度将根据现场技术改造具体情况动态调整。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { after: 200 },
+                children: [new TextRun({ text: "Periode konstruksi direncanakan: pembongkaran 25 hari, pengelasan anchor 10 hari, pengecoran 15 hari.", font: "Arial", size: 20, italics: true, color: "333333" })]
+            }),
+
+            // Bidding
+            sectionTitle("施工单位及费用 Kontraktor dan biaya"),
+
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "公司邀请江苏鑫鑫（PT.GET）、山东荣华、金鑫恒拓、建设公司四家单位就3#回转窑耐材施工进行报价。报价情况如下：", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { after: 100 },
+                children: [new TextRun({ text: "Perusahaan mengundang empat perusahaan untuk memberikan penawaran harga atas pekerjaan konstruksi refractory material rotary kiln no. 3.", font: "Arial", size: 20, italics: true, color: "333333" })]
+            }),
+
+            // Quotation table
+            new Paragraph({
+                spacing: { before: 100, after: 60 },
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "表1  3#回转窑耐材施工报价对比表", font: "Arial", size: 22, bold: true })]
+            }),
+            new Paragraph({
+                spacing: { after: 60 },
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "Tabel 1. Perbandingan Penawaran Harga Konstruksi Rotary Kiln No. 3", font: "Arial", size: 18, italics: true })]
+            }),
+
+            (() => {
+                const colW = [400, 1400, 1400, 2100, 1400, 2326];
+                const header = () => [
+                    headingCell("序号", colW[0], { size: 18 }),
+                    headingCell("报价单位", colW[1], { size: 18 }),
+                    headingCell("施工报价\n(万元)", colW[2], { size: 18 }),
+                    headingCell("报价构成", colW[3], { size: 18 }),
+                    headingCell("一次谈价\n(万元)", colW[4], { size: 18 }),
+                    headingCell("资质及响应情况", colW[5], { size: 18 }),
+                ];
+
+                const row = (no, name, price, composition, negotiated, qualification) => [
+                    dataCell(no, colW[0], { size: 17 }),
+                    dataCell(name, colW[1], { size: 17 }),
+                    dataCell(price, colW[2], { size: 17 }),
+                    dataCell(composition, colW[3], { align: AlignmentType.LEFT, size: 16 }),
+                    dataCell(negotiated, colW[4], { size: 17 }),
+                    dataCell(qualification, colW[5], { align: AlignmentType.LEFT, size: 16 }),
+                ];
+
+                return new Table({
+                    width: { size: contentWidth, type: WidthType.DXA },
+                    columnWidths: colW,
+                    rows: [
+                        new TableRow({ children: header() }),
+                        new TableRow({ children: row("1", "江苏鑫鑫\n(PT.GET)", "156.37", "人工费+机票+签证+食宿+\n工具费+安全文明施工+\n印尼增值税+中国所得税", "153.21", "业绩证明不足；JK3申办中") }),
+                        new TableRow({ children: row("2", "山东荣华", "182.43", "人工费+管理费+利润+\n工器具费+安全文明施工+\n风险+增值税+所得税+食宿", "180.04", "无印尼当地施工劳务许可；无JK3认证") }),
+                        new TableRow({ children: row("3", "金鑫恒拓", "260.1975", "施工+工器具辅材+税+\n食宿+管理费+利润", "229.60", "报价单位与施工单位名称不一致；\n施工工期与询价文件不一致") }),
+                        new TableRow({ children: row("4", "建设公司", "148.6356", "全费用\n（包含所有费用）", "148.6356", "报价文件均响应询价文件要求；\n资质齐全；价格最低") }),
+                    ]
+                });
+            })(),
+
+            new Paragraph({
+                spacing: { before: 100, after: 60 },
+                children: [new TextRun({ text: "注：本次询价要求施工单位将增值税、所得税、食宿、工器具辅材等费用全部包含在报价内。印尼政府规定增值税税率为12%，实际按11%计算。食宿标准按照印尼金川WP公司最新OBI园区服务项目表收费计算。", font: "Arial", size: 20 })]
+            }),
+            new Paragraph({
+                spacing: { after: 200 },
+                children: [new TextRun({ text: "Catatan: Harga di atas sudah termasuk PPN, PPh, akomodasi, konsumsi, dan alat bantu kerja.", font: "Arial", size: 18, italics: true, color: "333333" })]
+            }),
+
+            // Comparison with 4# rotary kiln
+            sectionTitle("与4#回转窑耐材施工实际费用对比 Perbandingan Biaya Aktual dengan RK No.4"),
+
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "为便于评审，现将本次报价与4#回转窑耐材施工实际发生费用进行对比分析如下：", font: "Arial", size: 22 })]
+            }),
+
+            new Paragraph({
+                spacing: { before: 100, after: 60 },
+                alignment: AlignmentType.CENTER,
+                children: [new TextRun({ text: "表2  本次报价与4#回转窑耐材施工实际费用对比表", font: "Arial", size: 22, bold: true })]
+            }),
+
+            (() => {
+                const colW = [2600, 1500, 1500, 1700, 1726];
+                const rows = [
+                    [headingCell("费用项目", colW[0], { size: 18 }),
+                     headingCell("4#回转窑实际\n（万元）", colW[1], { size: 18 }),
+                     headingCell("建设公司报价\n（万元）", colW[2], { size: 18 }),
+                     headingCell("江苏鑫鑫谈价\n（万元）", colW[3], { size: 18 }),
+                     headingCell("山东荣华谈价\n（万元）", colW[4], { size: 18 })],
+
+                    ["施工合同价/含税报价", "68.145", "148.6356\n(全费用)", "153.21\n(全费用)", "180.04\n(全费用)"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: i === 0 })),
+                    ["增值税(11%)", "7.496", "已包含", "已包含", "已包含"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: i === 0 })),
+                    ["所得税(10%)", "6.815", "已包含", "已包含", "已包含"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: i === 0 })),
+                    ["食宿费用", "38.960", "已包含", "已包含", "已包含"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: i === 0 })),
+                    ["工器具辅材", "25.600", "已包含", "已包含", "已包含"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: i === 0 })),
+                    ["合计", "147.015", "148.6356", "153.21", "180.04"].map((t, i) => dataCell(t, colW[i], { size: 17, bold: true })),
+                ];
+                return new Table({
+                    width: { size: contentWidth, type: WidthType.DXA },
+                    columnWidths: colW,
+                    rows: rows.map(r => new TableRow({ children: r }))
+                });
+            })(),
+
+            new Paragraph({
+                spacing: { before: 80, after: 80 },
+                children: [new TextRun({ text: "从上表对比可以看出：", font: "Arial", size: 22, bold: true })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "1. 4#回转窑耐材施工实际总费用为147.015万元（含68.145万元合同价、增值税7.496万元、所得税6.815万元、食宿38.960万元、工器具辅材25.600万元）。其中食宿费用根据施工人员构成（中方5人、印尼方40人）在岛46-48天按现行标准测算。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "2. 建设公司全费用报价148.6356万元，与4#回转窑实际总费用147.015万元基本持平，仅高出1.62万元，价格合理且具有竞争力。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "3. 建设公司报价为四家单位中最低，且为全费用报价（包含增值税、所得税、食宿、工器具辅材等），无任何后续增加费用风险。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 200 },
+                children: [new TextRun({ text: "4. 金鑫恒拓报价最高（229.60万元），且存在报价单位与施工单位名称不一致等问题，不予推荐。", font: "Arial", size: 22 })]
+            }),
+
+            // Tax note
+            sectionTitle("税费说明 Keterangan Pajak"),
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "根据印尼政府规定，增值税（PPN）税率为12%，但在实际收取过程中按11%计算。所得税（PPh）按10%税率执行。本次报价中，建设公司全费用报价已包含上述税费，不再另行计取。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { after: 100 },
+                children: [new TextRun({ text: "Sesuai ketentuan Pemerintah Indonesia, tarif PPN adalah 12%, namun dalam pelaksanaan dihitung sebesar 11%. PPh sebesar 10%.", font: "Arial", size: 20, italics: true, color: "333333" })]
+            }),
+
+            // Recommendation
+            sectionTitle("推荐意见 Rekomendasi"),
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "经综合比较各施工单位技术能力、施工经验、资质情况及报价合理性，结合与4#回转窑实际费用的对比分析，建议选用建设公司为3#回转窑耐材施工单位。推荐理由如下：", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "1. 建设公司全费用报价148.6356万元，为四家单位中最低，与4#回转窑实际总费用147.015万元基本持平，价格合理。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "2. 建设公司报价文件均响应询价文件要求，资质齐全，具备回转窑耐材施工的相应能力和组织经验。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [new TextRun({ text: "3. 全费用报价模式消除了后续费用追加的风险，有利于项目成本管控。", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                spacing: { before: 40, after: 200 },
+                children: [new TextRun({ text: "4. 建议在确定拟选施工单位后，进一步与建设公司洽谈，争取更优惠的价格。", font: "Arial", size: 22 })]
+            }),
+
+            // Approval request
+            sectionTitle("提请审议事项 Hal yang Diajukan untuk Persetujuan"),
+            new Paragraph({
+                spacing: { before: 60, after: 60 },
+                children: [new TextRun({ text: "建议审议通过冶炼部3#回转窑耐材施工报告。", font: "Arial", size: 24, bold: true })]
+            }),
+            new Paragraph({
+                spacing: { after: 60 },
+                children: [new TextRun({ text: "现提交公司总裁办公会议进行审议！", font: "Arial", size: 24, bold: true })]
+            }),
+            new Paragraph({
+                spacing: { after: 60 },
+                children: [new TextRun({ text: "Demikian laporan ini diserahkan untuk dibahas dan disetujui dalam Rapat CEO Perusahaan.", font: "Arial", size: 20, italics: true })]
+            }),
+
+            lineSpace(200, 0),
+
+            new Paragraph({
+                spacing: { before: 200 },
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "装备能源部", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "Divisi EPR", font: "Arial", size: 20, italics: true })]
+            }),
+            new Paragraph({
+                spacing: { before: 60 },
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "2026年7月8日", font: "Arial", size: 22 })]
+            }),
+            new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "8 Juli 2026", font: "Arial", size: 20, italics: true })]
+            }),
+        ]
+    }]
+});
+
+
+// =============== GENERATE BOTH FILES ===============
+
+const baseDir = "D:\\工作\\装备能源\\检修管理\\2026年\\年度大修\\3#生产线\\评审";
+
+async function main() {
+    // Document 1
+    const buf1 = await Packer.toBuffer(efReport);
+    const path1 = `${baseDir}\\2026.07.08 总裁办公会材料 - 关于冶炼部3#、1#电炉耐材施工的报告 Laporan Perihal Pemasangan Refractory Material EF No.3 & No.1 Divisi Smelter.docx`;
+    fs.writeFileSync(path1, buf1);
+    console.log(`Created: ${path1}`);
+
+    // Document 2
+    const buf2 = await Packer.toBuffer(kilnReport);
+    const path2 = `${baseDir}\\2026.07.08 总裁办公会材料 - 关于冶炼部3#回转窑耐材施工的报告 Laporan Perihal Pemasangan Refractory Material Rotary Kiln No.3 Divisi Smelter.docx`;
+    fs.writeFileSync(path2, buf2);
+    console.log(`Created: ${path2}`);
+
+    console.log("Both documents generated successfully!");
+}
+
+main().catch(console.error);

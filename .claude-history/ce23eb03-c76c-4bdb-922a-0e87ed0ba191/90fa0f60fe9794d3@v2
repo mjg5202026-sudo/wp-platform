@@ -1,0 +1,131 @@
+---
+name: 机关公文格式
+description: 机关公文格式设置规范 — 按国家标准设置字体、字号、行距、页边距等
+metadata:
+  type: reference
+  version: 1.0
+---
+
+# 机关公文格式设置规范
+
+## 字体字号
+
+| 元素 | 字体 | 字号 | 等效pt |
+|------|------|------|--------|
+| **标题** | 方正小标宋简体 | 二号 | 22pt |
+| **正文** | 仿宋\_GB2312 | 三号 | 16pt |
+| **一级标题（一、二、三）** | 黑体 | 三号 | 16pt |
+| **二级标题（（一）（二）（三））** | 楷体\_GB2312 | 三号 | 16pt |
+| **三级标题（1. 2. 3.）** | 仿宋\_GB2312 | 三号 | 16pt |
+| **四级标题（（1）（2）（3））** | 仿宋\_GB2312 | 三号 | 16pt |
+| **英文及数字** | Times New Roman | 与上下文一致 | — |
+
+## 行距
+
+| 元素 | 行距 | docx-js twips |
+|------|------|---------------|
+| **标题行距** | 固定值33–36磅 | 660–720 |
+| **全文行距** | 固定值28磅 | 560 |
+
+## 页边距
+
+| 方向 | 尺寸 | DXA (twips) |
+|------|------|-------------|
+| 上 | 3.7cm | 2098 |
+| 下 | 3.5cm | 1984 |
+| 左 | 2.8cm | 1587 |
+| 右 | 2.6cm | 1474 |
+
+## 版头要素
+
+| 要素 | 格式 |
+|------|------|
+| 份号 | 顶格居左，版心第一行，黑体三号 |
+| 密级 | 第二行，黑体三号 |
+| 紧急程度 | 第三行，黑体三号 |
+| 上行文发文字号 | 左空一个字 |
+| 签发人 | 右空一个字 |
+| "签发人"标签 | 仿宋\_GB2312 三号 |
+| 签发人姓名 | 楷体\_GB2312 三号 |
+
+## 附件
+
+- 附件与正文之间空一行
+- 仿宋\_GB2312 三号
+- 左空2字编排
+
+## 发文机关署名
+
+- 仿宋\_GB2312 三号
+- 距最后一行正文内容3个空行放置
+- 以成文日期为准居中编排
+
+## 日期
+
+- 仿宋\_GB2312 三号
+- 发文机关下方右空4个字格
+
+## 页码
+
+- 四号半角宋体阿拉伯数字
+- 格式："-1-"
+- 单页码居右空一字，双页码居左空一字
+
+## 文档网格
+
+- 每面排22行，每行排28个字
+
+## docx-js 参数速查
+
+```javascript
+// 字号换算（docx-js 使用 half-points）
+// 二号(22pt) → size: 44
+// 三号(16pt) → size: 32
+// 四号(14pt) → size: 28
+
+// 字体名称
+const FONT_TITLE = "方正小标宋简体";    // 标题
+const FONT_BODY = "仿宋_GB2312";        // 正文
+const FONT_H1 = "黑体";                 // 一级标题
+const FONT_H2 = "楷体_GB2312";          // 二级标题
+const FONT_H34 = "仿宋_GB2312";         // 三四级标题
+const FONT_EN = "Times New Roman";       // 英文数字
+
+// 行距（固定值，单位 twips）
+const LINE_SPACING_TITLE = 660;   // 33pt × 20
+const LINE_SPACING_BODY = 560;    // 28pt × 20
+
+// 页边距（DXA = twips）
+const MARGIN_TOP = 2098;    // 3.7cm
+const MARGIN_BOTTOM = 1984; // 3.5cm
+const MARGIN_LEFT = 1587;   // 2.8cm
+const MARGIN_RIGHT = 1474;  // 2.6cm
+
+// 设置固定行距
+spacing: { line: 560, lineRule: "exact" }
+```
+
+## 使用方式
+
+在 docx-js 中设置段落样式时：
+
+```javascript
+// 正文
+new Paragraph({
+  children: [new TextRun({ text: "内容", font: "仿宋_GB2312", size: 32 })],
+  spacing: { line: 560, lineRule: "exact" },
+})
+
+// 一级标题（黑体）
+new Paragraph({
+  children: [new TextRun({ text: "一、标题", font: "黑体", size: 32, bold: true })],
+  spacing: { line: 660, lineRule: "exact" },
+})
+
+// 页面设置
+properties: {
+  page: {
+    margin: { top: 2098, bottom: 1984, left: 1587, right: 1474 },
+  },
+}
+```

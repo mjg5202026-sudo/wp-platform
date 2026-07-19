@@ -1,0 +1,312 @@
+# -*- coding: utf-8 -*-
+"""完整双语版 - 逐段翻译全文，保持格式"""
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+import os, re
+
+src = r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（终）.docx'
+out = r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（双语）.docx'
+doc = Document(src)
+
+# ========== 完整翻译字典 ==========
+T = {
+'装备能源部': 'Departemen Peralatan dan Energi',
+'2026年上半年经营活动分析报告': 'Laporan Analisis Kegiatan Operasional Semester I Tahun 2026',
+'2026年7月13日': '13 Juli 2026',
+'前言': 'Pendahuluan',
+
+'2026年上半年，装备能源部紧紧围绕公司年度经营目标，坚持"保运转、降成本、提效率"工作主线，认真落实公司降本增效、精益运维各项工作要求，扎实推进设备管理、能源保障、物资管理等重点工作，设备运行总体平稳，成本管控取得一定成效，修旧利废工作持续推进。':
+'Pada Semester I Tahun 2026, Departemen Peralatan dan Energi berfokus pada target operasional tahunan perusahaan, menerapkan prinsip kerja "menjaga operasi, menurunkan biaya, meningkatkan efisiensi", melaksanakan persyaratan perusahaan dalam menurunkan biaya dan meningkatkan efisiensi serta pemeliharaan ramping, mendorong pekerjaan utama seperti manajemen peralatan, jaminan energi, dan manajemen material. Operasi peralatan secara umum stabil, pengendalian biaya mencapai hasil tertentu.',
+
+'从主要经营指标完成情况来看，上半年综合故障率为6.75%，较上年同期下降1.75个百分点，设备运行稳定性进一步提升；计划维修占比达到30.3%，较上年同期提高11.8个百分点，计划维修工作取得一定进展。持续推进自主维修，全面取消非必要外委检修，实现阶段性外委检修费用清零。成本管控方面，柴油消耗同比节约27.59%，限额材料节支4.25%，修旧利废完成326.28万元，降本增效工作取得阶段性成效。':
+'Tingkat kegagalan komprehensif Semester I sebesar 6,75%, turun 1,75 poin persentase dibandingkan periode sama tahun lalu. Proporsi pemeliharaan terencana mencapai 30,3%, meningkat 11,8 poin persentase. Menghapus pemeliharaan kontraktor yang tidak perlu, merealisasikan penghentian biaya kontraktor. Konsumsi solar hemat 27,59%, material terbatas hemat 4,25%, perbaikan dan pemanfaatan kembali mencapai 3,2628 juta yuan.',
+
+'同时，也要看到部分经营指标与目标要求仍有差距。一是计划维修占比虽然有所提高，但整体水平仍然偏低，预防性维修工作还需进一步加强；二是备品备件费用超预算5.17%，成本管控压力依然存在；三是电极糊单耗超目标40.27%，需采取针对性措施；四是备件库存压降未完成阶段目标，库存结构仍需持续优化。':
+'Namun masih terdapat kesenjangan dengan target. Pertama, proporsi pemeliharaan terencana masih rendah, pemeliharaan preventif perlu diperkuat. Kedua, biaya suku cadang melampaui anggaran 5,17%. Ketiga, konsumsi pasta elektroda melampaui target 40,27%. Keempat, penurunan stok suku cadang belum mencapai target tahap.',
+
+'下半年，装备能源部将围绕年度经营目标，坚持问题导向，进一步加强设备基础管理，提高计划维修执行质量，持续推进自主维修和修旧利废，加强备件采购和库存管控，做好能源和材料消耗控制，努力提升设备运行保障能力和经营管理水平，确保全年各项经营目标顺利完成。':
+'Pada Semester II, Departemen Peralatan dan Energi akan berfokus pada target tahunan, memperkuat manajemen dasar peralatan, meningkatkan kualitas pemeliharaan terencana, mendorong pemeliharaan mandiri, memperkuat pengadaan suku cadang dan pengendalian inventaris, mengendalikan konsumsi energi dan material, memastikan seluruh target operasional tahunan tercapai.',
+
+'一、设备运行分析': 'I. Analisis Operasi Peralatan',
+'（一）总体运行情况': '(A) Gambaran Umum Operasi',
+'1.冶炼部': '1. Divisi Smelter',
+
+'2026年上半年，各生产线设备可开动率均较去年同期有所提高，平均可开动率为93.25%，同比提高4.15个百分点。其中，2#生产线提升幅度最大。':
+'Pada Semester I 2026, tingkat kesiapan operasi peralatan semua lini produksi meningkat dibandingkan periode sama tahun lalu, rata-rata 93,25%, meningkat 4,15 poin persentase. Lini produksi 2# mengalami peningkatan terbesar.',
+
+'综合故障率6.75%，较上年同期下降1.75个百分点。非计划停机时间同比减少，各系统作业率均保持在96%以上，设备运行稳定性进一步提升。':
+'Tingkat kegagalan komprehensif 6,75%, turun 1,75 poin persentase. Waktu penghentian tidak terencana berkurang, tingkat operasi semua sistem di atas 96%, stabilitas operasi peralatan meningkat.',
+
+'2.电厂部': '2. Divisi Power Plant',
+
+'2026年上半年，电厂部设备运行总体平稳，非计划停机次数较去年同期明显减少。上半年电厂部共发生非计划停机1次，主要是配合冶炼立磨抢修临时停炉，以及启机过程中因发电机滑环底座受潮影响并网，造成延时并网6小时，未发生电厂设备原因导致的非计划停机。':
+'Pada Semester I 2026, operasi Divisi Power Plant berjalan stabil, jumlah penghentian tidak terencana berkurang signifikan. Hanya terjadi 1 kali penghentian tidak terencana karena perbaikan darurat vertical mill dan keterlambatan sinkronisasi 6 jam akibat kelembaban pada slip ring generator.',
+
+'综合分析': 'Analisis Komprehensif',
+'应对措施': 'Tindakan Penanggulangan',
+'（二）冶炼部': '(B) Divisi Smelter',
+'（二）电厂部': '(B) Divisi Power Plant',
+
+'2026年上半年，冶炼部电炉系统故障率较去年同期明显下降，运行稳定性得到改善。1#电炉故障13次，影响时间56.4小时；2#电炉故障18次，影响时间103.4小时；3#电炉故障25次，影响时间65.7小时。电炉系统停机后开展专业集中点检，加强电极系统关键部位运行管理，隐性故障较去年同期有所减少。':
+'Pada Semester I 2026, tingkat kegagalan sistem tungku listrik Divisi Smelter menurun signifikan. Tungku 1# gagal 13 kali (56,4 jam), Tungku 2# gagal 18 kali (103,4 jam), Tungku 3# gagal 25 kali (65,7 jam). Pemeriksaan profesional terpusat setelah penghentian dan manajemen komponen kunci sistem elektroda telah mengurangi kegagalan tersembunyi.',
+
+'原辅料干燥系统和回转窑系统运行时间同比增加，设备运行稳定性有所改善。大倾角皮带裙边破损、扇形阀故障、圆锥破堵塞等问题仍时有发生，但故障频次较去年同期有所下降。':
+'Waktu operasi sistem pengeringan dan sistem rotary kiln meningkat, stabilitas operasi membaik. Kerusakan belt, kegagalan katup扇形, penyumbatan cone crusher masih terjadi namun frekuensinya menurun.',
+
+'（三）设备可靠性分析': '(C) Analisis Keandalan Peralatan',
+
+'电炉系统整体可靠性较高，1#、2#、3#电炉MTBF分别为329.8h、235.6h、171.1h，较去年同期有所改善。回窑和干燥系统MTBF相对偏低，1#、2#回窑MTBF分别为71.2h、76.2h，干燥系统相关设备MTBF在60.6h至98.8h之间。干燥系统故障频次较高，1#线69次、2#线43次、3#线57次，主要集中在皮带撕裂、跑偏和圆锥破堵塞等问题，与设备老化及维护标准不匹配有关。':
+'Keandalan sistem tungku listrik cukup tinggi, MTBF Tungku 1#, 2#, 3# masing-masing 329,8h, 235,6h, 171,1h. MTBF rotary kiln dan sistem pengeringan relatif rendah. Frekuensi kegagalan sistem pengeringan tinggi, terutama pada kerusakan belt dan penyumbatan cone crusher, terkait dengan penuaan peralatan dan standar pemeliharaan yang tidak sesuai.',
+
+'（四）影响经营指标的主要因素': '(D) Faktor Utama Mempengaruhi Indikator Operasional',
+
+'立磨系统两次重大故障对设备运行指标造成明显影响：一次是6月4日立磨故障导致2#、3#电炉待料停机33小时，另一次是6月23日立磨磨辊故障导致1#至3#电炉全线待料停机约130小时，两条故障合计影响时间超过160小时，是影响上半年设备运行指标的主要因素。立磨粉煤系统仅能维持18小时满负荷运行的粉煤储量，无可切换的备用磨辊总成，系统抗风险能力不足，一旦发生设备故障将面临全线停产风险。':
+'Dua kegagalan besar sistem vertical mill berdampak signifikan: 4 Juni (33 jam) dan 23 Juni (~130 jam), total >160 jam. Sistem penyimpanan bubuk batubara hanya mampu 18 jam operasi beban penuh, tanpa cadangan roller mill, risiko ketahanan sistem tidak memadai.',
+
+'6.应对措施': '6. Tindakan Penanggulangan',
+
+'（1）建立电极系统关键设备全周期管理流程，明确电极护屏、接触元件、底环、水冷电缆、料管等关键部位的运行记录和管理要求，建立专用台账，落实定人、定责管理。':
+'(1) Membangun proses manajemen siklus penuh untuk komponen kunci sistem elektroda, menetapkan catatan operasi dan persyaratan manajemen untuk layar pelindung elektroda, elemen kontak, cincin bawah, kabel pendingin air, pipa material, dll.',
+
+'（2）推行"计划性检修+停机专业点检"相结合的设备维护模式，在电炉系统停机后，组织各专业人员集中开展设备状态诊断，形成评估报告，制定合理的检修维护计划，减少隐性故障和突发事故的发生。':
+'(2) Menerapkan model pemeliharaan "pemeliharaan terencana + pemeriksaan profesional saat penghentian", melakukan diagnosa status peralatan terpusat setelah penghentian tungku listrik, menyusun laporan evaluasi dan rencana pemeliharaan yang wajar.',
+
+'（3）加强原辅料干燥系统与回转窑系统易损设备的日常管理，特别是大倾角皮带、扇形阀、圆锥破等易损设备的定期检查与维护，明确检查周期、维护标准和责任人，对故障高发部位开展专项原因分析，制定针对性改善措施，持续优化设备运行条件。':
+'(3) Memperkuat manajemen harian peralatan rentan sistem pengeringan dan rotary kiln, terutama pemeriksaan rutin belt, katup扇形, cone crusher, menentukan siklus pemeriksaan, standar pemeliharaan dan penanggung jawab.',
+
+'（4）加快立磨磨辊总成采购储备进度，将粉煤系统储存能力由18小时提升至24小时以上，同步建立关键备件安全库存预警机制。严格执行设备三级点检和润滑保养制度，加强员工技能培训，提高设备隐患排查治理和操作水平。':
+'(4) Mempercepat pengadaan roller mill vertical, meningkatkan kapasitas penyimpanan dari 18 jam menjadi >24 jam, membangun mekanisme peringatan stok pengaman untuk suku cadang kunci. Melaksanakan sistem pemeriksaan tiga tingkat dan pemeliharaan pelumasan, meningkatkan pelatihan keterampilan karyawan.',
+
+'二、能源消耗': 'II. Konsumsi Energi',
+'（一）电厂部': '(A) Divisi Power Plant',
+
+'2026年上半年，电厂部累计发电45,319.32万kwh，同比增长2.98%。综合厂用电率9.39%，同比下降11.47%，降幅较为明显。发电量增加的主要原因是上半年冶炼系统镍铁产量较去年同期有一定增长；厂用电率下降的主要原因是上半年单台机组平均负荷高于去年同期，以及循环水系统优化改造为"单机单泵"运行模式。':
+'Pada Semester I 2026, pembangkit listrik menghasilkan 45.319,32 kwh, naik 2,98%. Tingkat konsumsi listrik sendiri 9,39%, turun 11,47%. Peningkatan produksi listrik terkait dengan peningkatan produksi FeNi. Penurunan konsumsi listrik sendiri karena beban rata-rata unit lebih tinggi dan optimalisasi sistem air sirkulasi.',
+
+'发电标煤耗397.29g/kwh，同比下降0.01%，比年度预算目标391g/kwh高1.48%。下降的主要原因是上半年单台机组平均负荷44.28MW，高于去年同期的42.3MW，同时上半年动力煤平均低位发热量为3,143kcal/kg，高于去年同期的3,065kcal/kg。':
+'Konsumsi batubara standar pembangkit 397,29g/kwh, turun 0,01%. Beban rata-rata unit 44,28MW (vs 42,3MW) dan nilai kalor batubara 3.143kcal/kg (vs 3.065kcal/kg) menjadi faktor utama.',
+
+'下半年，电厂部将根据生产负荷需求科学调配机组启停，合理控制运行方式，持续做好燃煤掺配优化，加强设备维护和运行管理，努力降低各类消耗，确保完成全年各项目标任务。':
+'Pada Semester II, Divisi Power Plant akan mengatur start/stop unit secara ilmiah, mengoptimalkan pencampuran batubara, memperkuat pemeliharaan peralatan dan manajemen operasi, memastikan pencapaian target tahunan.',
+
+'三、物资管理': 'III. Manajemen Material',
+'（一）备品备件': '(A) Suku Cadang',
+
+'2026年上半年，公司备品备件预算为156.69万美元，实际支出164.78万美元，超预算5.17%。超支原因主要集中在两个方面：一是行政部年初厨具集中到货、道路安防及生活区管网整改等集中实施，备件领耗阶段性偏高；二是安全生产技术部年初检测化验类备件集中到货，同时多次雷击造成地磅等设备损坏，维修更换需求增大。':
+'Anggaran suku cadang Semester I 2026 sebesar 156,69 ribu USD, realisasi 164,78 ribu USD, melebihi 5,17%. Penyebab utama: konsentrasi pengiriman perlengkapan dapur dan perbaikan jaringan pipa di Divisi Administrasi, serta pengiriman terkonsentrasi suku cadang pengujian dan kerusakan akibat petir di Divisi Keselamatan dan Teknis.',
+
+'冶炼部和生产保障部均完成预算指标。2#生产线于去年完成大修，设备工况稳定，备件消耗控制在预算范围内。4#生产线3月中旬开始技改，上半年生产任务相对较轻。电厂部上半年按计划对三台机组实施了检修，完成全年计划检修次数的50%，由于大多设备已运行较长时间，已普遍进入检修更换周期，上半年更换了重要辅机，但备件消耗总体控制良好，仅超预算0.64%。':
+'Divisi Smelter dan Divisi Jaminan Produksi mencapai target anggaran. Divisi Power Plant melaksanakan pemeliharaan untuk 3 unit, mencapai 50% dari rencana tahunan, konsumsi suku cadang terkendali baik, hanya melebihi 0,64%.',
+
+'年初装备能源部在备件费用预算中预留了15.41万美元，专门用于日常备件消耗量较小的部门临时或额外申报的备件需求，增强预算的灵活性和适用性。按包含预留费用的预算口径（164.39万美元）计算，上半年实际支出较预算仅超0.24%，基本持平。':
+'Departemen Peralatan dan Energi menyisihkan 154,1 ribu USD untuk kebutuhan suku cadang mendadak. Dengan anggaran termasuk dana cadangan (1.643,9 ribu USD), realisasi hanya melebihi 0,24%.',
+
+'下半年将重点推进以下工作：一是对冶炼镍铁升级改造拆除的具备复用价值的备件实施保护性拆解和分类仓储管理，用于各生产线日常检修，压缩新备件采购支出；二是推进第四台挖掘机油改电改造，对已达使用年限工程车辆开展综合评估，降低设备故障发生率和维修费用；三是持续推动技术改进和设备结构优化，减少易损备件消耗。':
+'Fokus Semester II: (1) pembongkaran dan penyimpanan terklasifikasi untuk suku cadang yang dapat digunakan kembali; (2) konversi ekskavator ke-4 dari solar ke listrik; (3) mendorong perbaikan teknis dan optimalisasi struktur peralatan.',
+
+'（二）定额材料': '(B) Material Kuota',
+
+'（1）电极糊实际单耗为1182.58吨/万吨镍金属，较目标值706.30高出40.27%。主要原因：矿石品位逐年下降，每吨镍铁消耗原矿量增加，耗电量增加，电极糊消耗量增加；为配合低品位矿冶炼合格镍铁的工艺需求，采用低碳控制，电极糊中碳元素参与还原反应，消耗速率加快。':
+'(1) Konsumsi pasta elektroda 1.182,58 ton/10.000 ton logam nikel, melebihi target 40,27%. Penyebab: penurunan kadar bijih, peningkatan konsumsi bijih per ton FeNi, kontrol karbon rendah untuk memenuhi persyaratan proses.',
+
+'（2）圆钢超耗48.02%，圆钢主要用于制作电极壳，其使用量与电极糊用量正相关。':
+'(2) Konsumsi baja bulat melebihi 48,02%, digunakan untuk pembuatan cangkang elektroda, berkorelasi positif dengan konsumsi pasta elektroda.',
+
+'（3）脱模剂较预算节约11.69%，主要原因是冶炼部实施了66米浇铸机喷淋改造，挖设沉降蓄水池，实现石灰水回收利用，大幅降低了脱模剂使用量。':
+'(3) Hemat bahan pelepas cetakan 11,69%, karena modifikasi penyemprotan mesin pengecoran 66m dan daur ulang air kapur.',
+
+'（4）吹氧管节约17.53%，一是66米毛铁破碎装置投用减少切割作业，二是加大废旧吹氧管修复焊接复用力度。':
+'(4) Hemat pipa oksigen 17,53%, karena pengurangan pekerjaan pemotongan dan peningkatan perbaikan pipa oksigen bekas.',
+
+'下一步将重点加强电极系统全面管理，制定消耗定额与使用规范，严控操作异常消耗；加强炉况工艺管控，及时调整工艺参数，减少异常材料消耗；推进二次利用和月度消耗数据分析。':
+'Langkah selanjutnya: memperkuat manajemen sistem elektroda, menetapkan norma konsumsi, memperkuat kontrol proses tungku, menyesuaikan parameter proses tepat waktu, mendorong penggunaan kembali dan analisis data konsumsi bulanan.',
+
+'（三）限额材料': '(C) Material Terbatas',
+
+'2026年上半年限额材料预算128.22万美元，实际领用122.77万美元，较预算节约4.25%，管控成效良好。节约的主要原因：一是全面推进提质增效和成本责任下班组等精细化管理，从作业源头严控耗材消耗；二是设备运行状态优于去年同期，减少了抢修耗材领用；三是严格物资计划管控，优先使用项目遗留物资、废旧物资和拆除可复用物资。':
+'Anggaran material terbatas Semester I 128,22 ribu USD, realisasi 122,77 ribu USD, hemat 4,25%. Penyebab: manajemen ramping, kontrol konsumsi dari sumber, kondisi operasi peralatan lebih baik, kontrol ketat rencana material.',
+
+'下一步将重点做好以下工作：一是对技改、大修等专项项目建立独立耗材领用台账，清晰区分日常领用与专项项目领用；二是加强工程车辆老化问题的管理，结合设备评估结果分批次实施更新或改造；三是加强消耗责任考核，对超预算原因属于管理不严、计划不合理的严格考核追责。':
+'Langkah selanjutnya: (1) membuat buku terpisah untuk material proyek khusus; (2) memperkuat manajemen kendaraan tua; (3) memperkuat penilaian tanggung jawab konsumsi yang melampaui anggaran.',
+
+'（四）柴油': '(D) Solar',
+
+'2026年上半年，公司柴油预算总量197.36万升，实际领用142.91万升，整体较预算节约27.59%。分部门来看，冶炼部节约45.1万升，节支幅度75.06%，成效最为突出，主要原因是冶炼部燃烧煤工艺控制稳定，将柴油超耗指标纳入班组考核，压实管控责任，同时细化生产操作管控，非必要点火严格控制。':
+'Anggaran solar Semester I 197,36 ribu liter, realisasi 142,91 ribu liter, hemat 27,59%. Divisi Smelter hemat 45,1 ribu liter (75,06%), karena kontrol proses pembakaran stabil dan indikator konsumsi solar dimasukkan dalam penilaian tim.',
+
+'电厂部节约0.63万升，节支幅度32.17%，上半年机组柴油点火启炉3次，较去年减少1次，但单次点火柴油消耗量略有增加，主要原因是大量掺烧低热值煤后炉膛升温难度增加。':
+'Divisi Power Plant hemat 0,63 ribu liter (32,17%), 3 kali start dengan solar (turun 1 kali), namun konsumsi per start sedikit meningkat karena kesulitan pemanasan tungku dengan pencampuran batubara nilai kalor rendah.',
+
+'生产保障部节约6.25万升，节支5.66%，两台油改电挖掘机投用减少柴油消耗约6.62万升。营销物流部节约2.32万升，拖轮租赁由6艘减至5艘，码头岸电设施投用减少柴油消耗。':
+'Divisi Jaminan Produksi hemat 6,25 ribu liter (5,66%), dua ekskavator konversi listrik hemat ~6,62 ribu liter. Divisi Logistik hemat 2,32 ribu liter, pengurangan sewa kapal tunda dan penggunaan listrik darat.',
+
+'下一步重点：一是评估立磨选粉机性能，降低柴油助燃消耗；二是定期清理电炉烟气净化系统，提高烟气回用率；三是建立单台车船油耗台账，推进老旧设备更新和油改电改造；四是细化油耗管理，按设备分类统计，严格管控。':
+'Langkah selanjutnya: (1) evaluasi kinerja classifier vertical mill; (2) pembersihan rutin sistem pemurnian gas tungku; (3) buku catatan konsumsi BBM per kendaraan; (4) pengelolaan konsumsi BBM yang lebih rinci.',
+
+'四、库存分析': 'IV. Analisis Inventaris',
+'（一）库存总体情况': '(A) Gambaran Umum Inventaris',
+
+'截至2026年6月底，公司备品备件库存总额约1431万美元，限额材料库存总额约239万美元。从全年压降目标的完成情况来看，备件库存尚未完成阶段压降任务，材料库存中冶炼部完成了压降目标，电厂部和生产保障部仍有差距。':
+'Hingga akhir Juni 2026, total inventaris suku cadang ~14,31 juta USD, inventaris material terbatas ~2,39 juta USD. Penurunan stok suku cadang belum mencapai target tahap, Divisi Smelter mencapai target penurunan material.',
+
+'冶炼部材料库存在上半年压降73.88万元，完成阶段目标，主要得益于修旧利废推进和采购计划严格管控。但备件库存仍高出控制目标47.06万元。生产保障部备件和材料库存均超出控制目标。':
+'Inventaris material Divisi Smelter turun 738,8 ribu yuan, mencapai target. Namun stok suku cadang masih 470,6 ribu yuan di atas target. Inventaris Divisi Jaminan Produksi keduanya melebihi target.',
+
+'主要滞存原因': 'Penyebab Utama Penumpukan',
+'一是工艺优化、设备更新及技改升级持续推进，部分历史时期按原设计配置的专用备件已无法适配现行设备体系，形成结构性冗余。冶炼系统四条生产线采用对称设计，风机、减速机等关键设备需双份配置备件，客观增加了备库规模。':
+'1. Optimalisasi proses, pembaruan peralatan dan upgrade teknis berkelanjutan menyebabkan suku cadang khusus tidak dapat beradaptasi dengan sistem saat ini. Desain simetris 4 lini produksi memerlukan konfigurasi ganda suku cadang.',
+
+'二是项目位于海外，备件采购周期长、物流不确定性高且单价较高，为保障生产连续性，早期按高安全库存策略储备关键备件，部分物资因生产运行平稳和需求变化长期未消耗。':
+'2. Proyek di luar negeri, siklus pengadaan panjang, ketidakpastian logistik tinggi, strategi stok pengaman tinggi di awal menyebabkan beberapa material tidak terpakai.',
+
+'三是疫情期间为应对国际供应链风险、运输受限以及生产保供压力，曾开展集中采购并扩大备库量，部分物资随供应链恢复逐步转为积压。':
+'3. Pembelian terkonsentrasi selama pandemi akibat risiko rantai pasok internasional menyebabkan penumpukan setelah rantai pasok pulih.',
+
+'四是车辆管理领域车型多样、更新频繁，部分老旧车型淘汰后，历史采购的相关备件与现有车辆不匹配，无法继续使用。':
+'4. Beragam model kendaraan, pembaruan sering, suku cadang historis tidak cocok dengan kendaraan yang ada setelah model lama dihentikan.',
+
+'五是关键设备多为非标件，早期设备管理不成熟阶段，由使用部门直接申购，审核与统筹机制不完善，形成重复申报与超量储备。':
+'5. Peralatan kunci sebagian besar non-standar, pada tahap awal manajemen peralatan belum matang, pengajuan langsung oleh departemen pengguna menyebabkan pengajuan berulang dan kelebihan stok.',
+
+'具体压降措施': 'Langkah Penurunan Konkret',
+
+'（1）按照"两金压降"专项方案要求，系统梳理失效、低效及长期滞存物资，完成相关物资鉴定及报废处置工作，同步推进报废物资资源化利用。持续推进"统一管理、按需领用"的库存管理模式，分步骤将相关物资划转至备用库存，进一步强化库存资源集中统筹管理，提高库存共享利用率。':
+'(1) Menyusun material tidak efektif dan menumpuk sesuai skema khusus "penurunan dua dana", mendorong pemanfaatan material bekas. Menerapkan model manajemen inventaris "manajemen terpusat, pengambilan sesuai kebutuhan".',
+
+'（2）结合镍铁升级改造项目，积极消化利用部分存量物资，充分挖掘库存物资再利用价值，有效降低新增采购需求及库存资金占用。':
+'(2) Mengintegrasikan dengan proyek upgrade FeNi, memanfaatkan material yang ada, mengurangi kebutuhan pembelian baru dan penggunaan dana inventaris.',
+
+'（3）持续开展物资消耗分析，结合实际消耗情况分类制定专项压降方案，明确消化路径、责任部门及时间节点。深化库存动态分析机制，结合生产负荷、设备运行状态及物资消耗数据，优化采购计划及备货周期。':
+'(3) Melakukan analisis konsumsi material, menyusun rencana penurunan khusus, memperdalam mekanisme analisis dinamis inventaris, mengoptimalkan rencana pembelian dan siklus pengadaan.',
+
+'（4）强化计划申报审核管理，严格控制新增库存。结合历史消耗数据、设备运行周期及现场实际需求，对物资申报数量、规格型号及采购必要性进行全过程审核，避免重复采购、超量储备。':
+'(4) Memperkuat manajemen review pengajuan rencana, mengontrol inventaris baru, menghindari pembelian berulang dan kelebihan stok.',
+
+'五、设备检修分析': 'V. Analisis Pemeliharaan Peralatan',
+'（一）计划检修完成情况': '(A) Realisasi Pemeliharaan Terencana',
+
+'2026年上半年累计完成计划性检修22,938分钟，折合约382.3小时。1#线计划检修128.2小时、2#线133.2小时、3#线120.8小时，三条线分布较为均衡。计划维修占比30.3%，较上年同期的18.5%有明显提升，维修管理正从以应急抢修为主的被动模式向以计划维修为主的主动模式逐步转变。':
+'Realisasi pemeliharaan terencana Semester I 22.938 menit (~382,3 jam). Proporsi pemeliharaan terencana 30,3%, meningkat dari 18,5% periode sama tahun lalu, bertransisi dari mode pasif ke mode aktif.',
+
+'（二）外委检修管控': '(B) Pengendalian Pemeliharaan Kontraktor',
+
+'2026年上半年，冶炼部、电厂部全面贯彻落实公司降本增效工作要求，取消了非必要外委检修项目。上半年两部门均未发生外委检修委托业务，无外委费用列支，实现了阶段性外委检修费用清零的目标。自主承接了原外委的电机修理、风机维护、管道焊接等检修项目，检修响应时间平均缩短2至4天。按上年同期外委费用标准测算，上半年累计节约外委费用约45万美元。':
+'Pada Semester I, Divisi Smelter dan Power Plant menghapus pemeliharaan kontraktor yang tidak perlu, tidak ada biaya kontraktor, mencapai target penghentian biaya kontraktor. Pengerjaan mandiri mempersingkat waktu respons 2-4 hari, hemat ~450 ribu USD.',
+
+'（三）下一步措施': '(C) Langkah Selanjutnya',
+
+'一是建立内部维修能力清单，明确自主维修范围和外委业务准入标准。二是完善检修工时定额和质量验收标准，建立检修计划执行率月度统计分析机制。三是继续压减非必要外委检修项目，力争下半年外委费用继续保持零发生。':
+'(1) Membuat daftar kemampuan perbaikan internal. (2) Menyempurnakan standar jam kerja dan kualitas. (3) Terus mengurangi pemeliharaan kontraktor yang tidak perlu.',
+
+'六、修旧利废分析': 'VI. Analisis Perbaikan dan Pemanfaatan Kembali',
+
+'2026年上半年，公司累计完成修旧利废167项，创造经济价值326.28万元，完成年度目标488万元的66.85%，超时间进度16.85个百分点。其中冶炼部69项/181.33万元、生产保障部40项/108.62万元、电厂部50项/34.06万元、行政部8项/2.26万元。修旧利废工作不仅创造了直接经济效益，还锻炼了维修队伍的技术能力，降低了海外采购的汇率风险和物流周期影响。':
+'Realisasi perbaikan dan pemanfaatan kembali Semester I: 167 item, nilai ekonomi 3,2628 juta yuan, 66,85% dari target tahunan. Smelter 69 item/1,8133 juta, Jaminan Produksi 40 item/1,0862 juta, Power Plant 50 item/340,6 ribu, Administrasi 8 item/22,6 ribu.',
+
+'下一步，一是建立修旧利废目录清单，按"必须修、可以修、不必修"三个类别对备件进行分类管理；二是将修旧利废纳入维修工时考核体系，提高一线维修人员参与的积极性；三是逐步扩大修旧利废范围，从机械备件向电气、仪表备件领域延伸。':
+'Langkah selanjutnya: (1) membuat daftar klasifikasi "harus diperbaiki, dapat diperbaiki, tidak perlu diperbaiki"; (2) memasukkan dalam sistem penilaian jam kerja; (3) memperluas cakupan ke suku cadang listrik dan instrumen.',
+
+'七、经营存在问题': 'VII. Masalah Operasional',
+
+'一是设备可靠性仍有提升空间。综合故障率虽然较去年同期有所下降，但计划维修占比仍处于偏低水平，设备全生命周期管理体系尚未系统建立。二是库存资金占用偏高。备件库存压降未完成阶段目标，无动态库存占比较高，备件采购计划与实际需求匹配精度有待提高。三是关键设备抗风险能力不足。立磨系统设备储备能力偏低，一旦发生故障即面临全线停产风险，关键备件储备策略需进一步优化。四是定额材料成本管控有待加强。电极糊单耗持续超目标，定额指标与原料品位变化的联动调整机制尚未建立。五是自主维修能力仍需提升。部分技术含量较高的检修项目尚无法完全自主开展，维修技能人才队伍需持续加强。':
+'(1) Keandalan peralatan仍需 ditingkatkan. (2) Dana inventaris masih tinggi, penurunan stok belum mencapai target. (3) Ketahanan risiko peralatan kunci tidak memadai. (4) Kontrol biaya material kuota perlu diperkuat. (5) Kemampuan perbaikan mandiri masih perlu ditingkatkan.',
+
+'八、问题原因分析': 'VIII. Analisis Penyebab Masalah',
+
+'从管理层面看，计划维修占比较低的根本原因在于维修计划管理尚未实现从消缺型向预防型的根本转变，设备劣化趋势分析尚未作为计划编制依据，备件采购计划与实际需求的匹配精度有待提高。从原料层面看，焙砂镍品位逐年下降的长期趋势不可逆转，定额指标与品位变化的联动机制尚未建立。从设备层面看，部分设备老化程度加剧，维护标准与设备实际工况之间存在不匹配。从供应链层面看，海外采购周期长、环节多，到货节奏不均衡，给库存控制带来较大困难。从人员层面看，高技能维修人才流失和技术梯队断层是制约自主维修深化的重要因素。':
+'Penyebab: (1) Manajemen: mode pemeliharaan belum berubah dari korektif ke preventif. (2) Material: tren penurunan kadar bijih tidak dapat diubah. (3) Peralatan: penuaan peralatan, ketidaksesuaian standar. (4) Rantai pasok: siklus pengadaan luar negeri panjang. (5) SDM: kehilangan teknisi terampil.',
+
+'九、下半年重点工作': 'IX. Fokus Pekerjaan Semester II',
+
+'一是着力提升计划维修占比，夯实设备保障基础。围绕下半年综合故障率控制在5%以内的目标，推行设备状态监测与定期维修相结合的策略，力争计划维修占比达到40%以上。针对干燥系统皮带和圆锥破等重复故障设备制定专项治理方案。加快立磨磨辊总成采购储备，将粉煤系统储存能力提升至24小时以上。':
+'(1) Meningkatkan proporsi pemeliharaan terencana, menargetkan tingkat kegagalan <5%, proporsi pemeliharaan terencana >40%. Mempercepat pengadaan roller mill.',
+
+'二是建立定额动态调整机制，严控材料成本。严格按调整后的目标单耗实施月度考核，建立定额消耗与矿石品位的联动调整模型。结合焙砂镍品位下降趋势对下半年定额指标进行合理修正。':
+'(2) Membangun mekanisme penyesuaian dinamis kuota, kontrol biaya material sesuai target yang disesuaikan.',
+
+'三是深入推进库存结构优化，压降资金占用。对超6个月无动态库存进行全面清理，力争释放资金约70万美元。建立关键备件安全库存动态调节机制，将库存压降纳入月度绩效考核。':
+'(3) Mendalami optimalisasi struktur inventaris, membersihkan stok tidak bergerak >6 bulan, membebaskan ~700 ribu USD.',
+
+'四是巩固自主维修成果，提升检修保障能力。完善内部维修能力清单，制定专项培训计划，总结推广技术创新成果，力争全年节约外委费用约90万美元。':
+'(4) Mengkonsolidasikan hasil perbaikan mandiri, menghemat biaya kontraktor ~900 ribu USD per tahun.',
+
+'五是强化关键设备风险管理，提高系统抗风险能力。增设立磨磨辊总成战略储备，建立关键备件最低安全库存预警线。针对电厂设备进入检修更换周期的实际，制定三年滚动检修计划。':
+'(5) Memperkuat manajemen risiko peralatan kunci, menambah cadangan strategis roller mill, menyusun rencana pemeliharaan bergulir 3 tahun.',
+
+'六是持续夯实设备管理基础，推进全生命周期管理。完善A类设备三级点检标准，建立设备劣化趋势分析台账。加强与相关部门的业务协同，在备件采购、定额核定、检修计划等方面形成联动机制。':
+'(6) Memperkuat fondasi manajemen peralatan, mendorong manajemen siklus hidup penuh, meningkatkan koordinasi antar departemen.',
+}
+
+# ========== 处理正文段落 ==========
+for i, p in enumerate(doc.paragraphs):
+    text = p.text.strip()
+    if not text:
+        continue
+    trans = T.get(text)
+    if not trans:
+        continue
+
+    # 在段落后面插入翻译段落
+    new_p = OxmlElement('w:p')
+    p._element.addnext(new_p)
+
+    # 复制段落格式
+    pPr = OxmlElement('w:pPr')
+    new_p.insert(0, pPr)
+
+    # 对齐方式
+    if p.alignment == WD_ALIGN_PARAGRAPH.CENTER:
+        jc = OxmlElement('w:jc'); jc.set(qn('w:val'), 'center'); pPr.append(jc)
+    elif p.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY:
+        jc = OxmlElement('w:jc'); jc.set(qn('w:val'), 'both'); pPr.append(jc)
+
+    # 首行缩进
+    if p.paragraph_format.first_line_indent:
+        ind = OxmlElement('w:ind')
+        ind.set(qn('w:firstLine'), str(int(p.paragraph_format.first_line_indent.emu or 0)))
+        pPr.append(ind)
+
+    # 行距
+    ls = p.paragraph_format.line_spacing
+    if ls:
+        spacing = OxmlElement('w:spacing')
+        if ls == 1.5:
+            spacing.set(qn('w:line'), '360')
+            spacing.set(qn('w:lineRule'), 'auto')
+        elif ls == 1.0:
+            spacing.set(qn('w:line'), '240')
+            spacing.set(qn('w:lineRule'), 'auto')
+        pPr.append(spacing)
+
+    # 段间距
+    sb = p.paragraph_format.space_before
+    sa = p.paragraph_format.space_after
+    if sb or sa:
+        spacing = pPr.find(qn('w:spacing'))
+        if spacing is None:
+            spacing = OxmlElement('w:spacing'); pPr.append(spacing)
+        if sb: spacing.set(qn('w:before'), str(int(sb.pt * 20)))
+        if sa: spacing.set(qn('w:after'), str(int(sa.pt * 20)))
+
+    # 添加运行（Times New Roman 14pt）
+    r_elem = OxmlElement('w:r')
+    new_p.append(r_elem)
+    rPr = OxmlElement('w:rPr')
+    r_elem.append(rPr)
+    rFonts = OxmlElement('w:rFonts')
+    rFonts.set(qn('w:ascii'), 'Times New Roman')
+    rFonts.set(qn('w:hAnsi'), 'Times New Roman')
+    rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+    rPr.append(rFonts)
+    sz = OxmlElement('w:sz'); sz.set(qn('w:val'), '28'); rPr.append(sz)  # 14pt
+    szCs = OxmlElement('w:szCs'); szCs.set(qn('w:val'), '28'); rPr.append(szCs)
+    t = OxmlElement('w:t'); t.set(qn('xml:space'), 'preserve'); t.text = trans
+    r_elem.append(t)
+
+# ========== 保存 ==========
+doc.save(out)
+print(f'Oke: {out}')
+print(f'Size: {os.path.getsize(out)} bytes')

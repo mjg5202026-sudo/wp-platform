@@ -1,0 +1,24 @@
+---
+created: 2026-06-30
+updated: 2026-06-30
+type: area
+status: active
+tags: [index, vault]
+summary: Obsidian 第二大脑知识库索引
+---
+
+# 欢迎来到你的第二大脑 🧠
+
+## PARA 结构
+
+- **[[areas]]** — 知识领域（持续关注的主题）
+- **[[projects]]** — 具体项目（有明确目标）
+- **[[resources]]** — 参考资料（感兴趣的主题）
+- **[[journal]]** — 日志记录（每日工作）
+- **[[ideas]]** — 想法捕捉（灵感笔记）
+
+## 快速链接
+
+- 最近活动: `recent()`
+- 知识健康: `health()`
+- 待办事项: `agenda()`

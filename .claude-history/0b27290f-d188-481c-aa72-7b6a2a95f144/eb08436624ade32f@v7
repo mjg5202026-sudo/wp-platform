@@ -1,0 +1,552 @@
+# -*- coding: utf-8 -*-
+"""EPR报告生成器 - 先从模板做第一个版本"""
+import sys, os, re
+sys.path.insert(0, 'D:\\soft\\work-flow\\wp-platform')
+os.chdir('D:\\soft\\work-flow\\wp-platform')
+
+from docx import Document
+from docx.shared import Pt, Cm
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from backend.config import REPORT_DIR
+
+# ============================================================
+# 定额材料预算价格表
+# ============================================================
+QUOTA_PRICES = {
+    "电极糊": 580,
+    "镁质炮泥": 680,
+    "无水炮泥": 491.428571428571,
+    "绿泥": 860,
+    "脱模剂": 92.4824943849914,
+}
+
+def read_quota_data(excel_path, year, month):
+    """从年度考核Excel读取定额材料5月数据"""
+    import openpyxl
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    ws = wb['26年单耗计算表 (1-5月) (剔除)']
+
+    # 找到对应月份的数据列
+    # 表头R4: 序号 | 指标 | ... | 业绩目标 | 1月目标|1月实际|单耗|超幅|...|5月目标|5月实际|单耗|超幅|...
+    header = []
+    for c in range(1, ws.max_column + 1):
+        v = ws.cell(4, c).value
+        header.append(str(v) if v else "")
+
+    # 定位5月数据的列: 每个月占5列 (目标,实际,单耗,超幅,考核)
+    # 但Q1合计(5列)插在3月和4月之间，所以4月/5月偏移+5
+    if month <= 3:
+        month_target_col = 8 + (month - 1) * 5
+    else:
+        month_target_col = 8 + (month - 1) * 5 + 5
+    # 目标, 实际, 单耗, 超幅, 考核
+    month_actual_col = month_target_col + 1
+    month_unit_col = month_target_col + 2
+    month_rate_col = month_target_col + 3
+
+    # 读取定额材料数据
+    quota_rows = {
+        "电极糊": 5,
+        "镁质炮泥": 6,
+        "无水炮泥": 7,
+        "绿泥": 8,
+        "脱模剂": 10,
+    }
+
+    results = []
+    for name, row_idx in quota_rows.items():
+        target_val = ws.cell(row_idx, month_target_col).value
+        actual_val = ws.cell(row_idx, month_actual_col).value
+        unit_val = ws.cell(row_idx, month_unit_col).value  # 实际单耗
+        rate_val = ws.cell(row_idx, month_rate_col).value
+        target_unit_val = ws.cell(row_idx, 7).value  # 业绩目标单耗（固定列）
+
+        target = float(target_val) if target_val else 0
+        actual = float(actual_val) if actual_val else 0
+        actual_unit = float(unit_val) if unit_val else 0
+        target_unit_budget = float(target_unit_val) if target_unit_val else 0
+        rate = float(rate_val) if rate_val else 0
+
+        # 影响数量 = 实际 - 目标 (超预算数量)
+        impact_qty = round(actual - target, 2)
+
+        # 影响金额 = 超预算数量 * 预算单价
+        unit_price = QUOTA_PRICES.get(name, 0)
+        impact_amount = round(impact_qty * unit_price, 2)
+
+        # 考核金额 = 超幅 * 影响金额 (月评季考)
+        penalty = round(rate * impact_amount, 2)
+
+        # 超幅显示
+        rate_display = f"{rate*100:.2f}%" if rate > 0 else "/"
+
+        results.append({
+            "name": name,
+            "target_unit": target_unit_budget,  # 业绩目标单耗（如0.07063）
+            "actual_unit": round(actual_unit, 4),  # 实际单耗
+            "target_qty": target,
+            "actual_qty": actual,
+            "rate_display": rate_display,
+            "rate": rate,
+            "impact_qty": impact_qty,
+            "impact_amount": impact_amount,
+            "penalty": penalty,
+        })
+
+    wb.close()
+    return results
+
+
+def generate_epr_report(year, month):
+    """生成EPR绩效考核报告"""
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    fname = f"{year}年{month}月份生产经营绩效考核意见（EPR）.docx"
+    fpath = os.path.join(REPORT_DIR, fname)
+
+    # 复制模板
+    template_path = 'D:\\soft\\work-flow\\wp-platform\\data\\templates\\2026年5月份印尼金川WP公司生产经营绩效考核意见（EPR）20260612.docx'
+    doc = Document(template_path)
+
+    # ============================================================
+    # 一、焙砂电单耗段落 (P4)
+    # 原文: "2026年5月份电炉用电量56830900kW·h，入炉焙砂105629t，...
+    #        焙砂电单耗538.02kW·h/t，低于业绩目标（540kW·h/t）0.37%...
+    #        奖励冶炼部274美元。"
+    # ============================================================
+    from backend.models_kpi import AssessmentKpiResult
+    from backend.services.kpi_service import calc_calcine_power
+
+    electricity = 56830900
+    calcine = 105629
+    result = calc_calcine_power(year, month, electricity, calcine)
+    actual = result["actual_value"]
+    over_rate = result["over_rate"]
+    reward = result["calculated_reward"]
+
+    # 修订焙砂电单耗段落 (P4)
+    for p in doc.paragraphs:
+        if '电炉用电量' in p.text or '焙砂电单耗' in p.text:
+            # 清除所有run的文字
+            for run in p.runs:
+                run.text = ""
+            # 在第一个run写入新内容
+            if p.runs:
+                run = p.runs[0]
+            else:
+                run = p.add_run("")
+
+            direction = "低于" if over_rate <= 0 else "高于"
+            reward_text = f"奖励冶炼部{abs(reward)}美元" if reward > 0 else f"考核冶炼部{abs(reward)}美元"
+
+            run.text = (
+                f"2026年{month}月份电炉用电量{int(electricity)}kW·h，"
+                f"入炉焙砂{int(calcine)}t，"
+                f"焙砂电单耗{actual}kW·h/t，"
+                f"{direction}业绩目标（540kW·h/t）{abs(over_rate)}%，"
+                f"依据《印尼金川WP公司2026年绩效管理业绩考核指标表》第8条之规定，"
+                f"{reward_text}。"
+            )
+            break
+
+    # ============================================================
+    # 定额材料表格 (Table 0)
+    # ============================================================
+    excel_path = 'D:\\soft\\work-flow\\wp-platform\\data\\templates\\2026年绩效考核计算.xlsx'
+    quota_data = read_quota_data(excel_path, year, month)
+
+    if doc.tables:
+        table = doc.tables[0]  # 定额材料考核表
+        # 表头已在模板中，只需要填数据行
+        for i, data in enumerate(quota_data):
+            if i + 1 < len(table.rows):
+                row = table.rows[i + 1]
+                cells = row.cells
+                if len(cells) >= 8:
+                    # 序号 - 已在模板中
+                    # 指标 - 已在模板中
+                    # 被考核单位 - 冶炼部
+                    cells[2].text = "冶炼部"
+                    # 单位
+                    cells[3].text = "吨/吨镍铁"
+                    # 业绩目标
+                    cells[4].text = str(data.get("target_unit", ""))
+                    # 5月实际业绩 (单耗)
+                    cells[5].text = str(data.get("actual_unit", ""))
+                    # 超幅
+                    cells[6].text = data["rate_display"]
+                    # 奖罚金额
+                    cells[7].text = "/"  # 月评季考
+                    # 考核频次 - 已在模板中
+
+    # ============================================================
+    # 柴油消耗表格 (Table 1)
+    # ============================================================
+    diesel_data = read_diesel_data(excel_path, year, month)
+
+    if len(doc.tables) > 1:
+        table = doc.tables[1]  # 柴油消耗考核表
+        for i, data in enumerate(diesel_data):
+            if i + 1 < len(table.rows):
+                row = table.rows[i + 1]
+                cells = row.cells
+                if len(cells) >= 8:
+                    cells[2].text = data["unit"]
+                    annual = data["annual_target"]
+                    cells[3].text = f"{annual:,.2f}" if annual else ""
+                    cells[4].text = f"{data['month_target']:,.2f}" if data['month_target'] else ""
+                    cells[5].text = f"{data['month_actual']:,.2f}" if data['month_actual'] else ""
+                    cells[6].text = data["rate_display"]
+                    cells[7].text = "/"  # 季度考核
+
+    # ============================================================
+    # 备品备件消耗表格 (Table 2 - 指标13 备品备件全年消耗)
+    # ============================================================
+    spare_parts_data = read_spare_parts_data(excel_path, year, month)
+
+    if len(doc.tables) > 2:
+        table = doc.tables[2]  # 备品备件消耗考核表
+        for i, data in enumerate(spare_parts_data):
+            if i + 1 < len(table.rows):
+                row = table.rows[i + 1]
+                cells = row.cells
+                if len(cells) >= 7:
+                    cells[2].text = f"{data['annual']:,.2f}" if data['annual'] else ""
+                    cells[3].text = f"{data['month_target']:,.2f}" if data['month_target'] else ""
+                    cells[4].text = f"{data['month_actual']:,.2f}" if data['month_actual'] is not None and data['month_actual'] != 0 else "0.00"
+                    cells[5].text = data["rate_display"]
+                    cells[6].text = "/"
+
+    # ============================================================
+    # 辅材消耗表格 (Table 3 - 指标14 辅材全年消耗)
+    # ============================================================
+    aux_data = read_aux_data(excel_path, year, month)
+
+    if len(doc.tables) > 3:
+        table = doc.tables[3]
+        for i, data in enumerate(aux_data):
+            if i + 1 < len(table.rows):
+                row = table.rows[i + 1]
+                cells = row.cells
+                if len(cells) >= 9:
+                    cells[2].text = f"{data['annual']:,.2f}" if data['annual'] else ""
+                    cells[3].text = f"{data['month_target']:,.2f}" if data['month_target'] else ""
+                    cells[4].text = f"{data['month_budget']:,.2f}" if data['month_budget'] else ""
+                    cells[5].text = f"{data['month_actual']:,.2f}" if data['month_actual'] else ""
+                    cells[6].text = data["over_rate_display"]
+                    cells[7].text = data["saving_rate_display"]
+                    cells[8].text = data["penalty_display"]
+
+    # ============================================================
+    # 存货压降表格 (Table 4 - 指标15 存货)
+    # ============================================================
+    inv_data = read_inventory_data(excel_path, year, month)
+
+    if len(doc.tables) > 4:
+        table = doc.tables[4]
+        for i, data in enumerate(inv_data):
+            if i + 1 < len(table.rows):
+                row = table.rows[i + 1]
+                cells = row.cells
+                if len(cells) >= 8:
+                    # cells[3]=2025年末(保留模板值), cells[4]=5月目标, cells[5]=5月实际
+                    # cells[6]=超幅, cells[7]=考核金额
+                    cells[4].text = f"{data['target']:,.2f}" if data['target'] else ""
+                    cells[5].text = f"{data['actual']:,.2f}" if data['actual'] else "0.00"
+                    cells[6].text = data["rate_display"]
+                    cells[7].text = data["penalty_display"]
+
+    # ============================================================
+    # 生成各段描述文字（按段落索引，避免docx编码匹配问题）
+    # 索引: P7=定额, P10=柴油, P13=备品备件, P16=辅材冶炼部
+    #       P23=库存冶炼部, P24=库存电厂部, P25=库存生产保障部
+    # ============================================================
+    ps = doc.paragraphs
+    ms = f"{month}月份"
+
+    # P7: 定额材料
+    if len(ps) > 7:
+        over_items = [(d['name'], d['rate_display']) for d in quota_data if d['rate'] > 0]
+        t7 = (f"{ms}定额系{over_items[0][0]}业绩目标单耗{quota_data[0]['target_unit']}，实际业绩单耗{quota_data[0]['actual_unit']}，超业绩目标，超幅{over_items[0][1]}，其余定额料均未超业绩目标。"
+              if len(over_items) == 1 else
+              f"{ms}，定额系全部定额料均未超业绩目标。" if not over_items else
+              f"{ms}定额系{'、'.join([n+r for n,r in over_items])}消耗超业绩目标，其余定额料均未超业绩目标。")
+        for r in ps[7].runs: r.text = ""
+        (ps[7].runs[0] if ps[7].runs else ps[7].add_run("")).text = t7
+
+    # P10: 柴油
+    if len(ps) > 10:
+        od = [d for d in diesel_data if d['rate_display'] != '/']
+        t10 = f"{ms}，各部门柴油均未超业绩目标。" if not od else f"{ms}，{'、'.join([d['dept']+d['rate_display'] for d in od])}柴油消耗超业绩目标。"
+        for r in ps[10].runs: r.text = ""
+        (ps[10].runs[0] if ps[10].runs else ps[10].add_run("")).text = t10
+
+    # P13: 备品备件
+    if len(ps) > 13:
+        t13 = f"{ms}，各部门备品备件均未超业绩目标。"
+        for r in ps[13].runs: r.text = ""
+        (ps[13].runs[0] if ps[13].runs else ps[13].add_run("")).text = t13
+
+    # P16: 辅材-冶炼部
+    if len(ps) > 16:
+        a = aux_data[0]
+        r = a['over_rate_display'] if a['over_rate_display'] != '/' else a['saving_rate_display']
+        p = a['penalty_display']
+        t16 = (f"{year}年{ms}，冶炼部辅材消耗业绩目标{a['month_target']:,.2f}美元，实际消耗{a['month_actual']:,.2f}美元，超幅{r}，"
+               f"依据《印尼金川WP公司{year}年绩效管理业绩考核指标表》第9条之规定，{'考核' if p.startswith('-') else '奖励'}冶炼部{abs(int(float(p)))}美元。")
+        for r in ps[16].runs: r.text = ""
+        (ps[16].runs[0] if ps[16].runs else ps[16].add_run("")).text = t16
+
+    # P23-25: 存货压降
+    for pidx, iidx, dname in [(23, 0, "冶炼部"), (24, 1, "电厂部"), (25, 2, "生产保障部")]:
+        if len(ps) > pidx:
+            inv = inv_data[iidx]
+            if inv['rate_display'] == '/': continue
+            r = inv['rate_display']; p = inv['penalty_display']
+            is_over = not r.startswith('-')
+            display_r = r.lstrip('-+')  # 去掉正负号
+            t = (f"{ms}，{dname}库存业绩目标{inv['target']:,.2f}万美元，实际业绩{inv['actual']:,.2f}万美元，{'未达压降目标，增幅' if is_over else '达到压降目标，降幅'}{display_r}，"
+                 f"依据《印尼金川WP公司{year}年绩效管理业绩考核指标表》第23条之规定，{'考核' if p.startswith('-') else '奖励'}{dname}{abs(int(float(p)))}美元。")
+            for r in ps[pidx].runs: r.text = ""
+            (ps[pidx].runs[0] if ps[pidx].runs else ps[pidx].add_run("")).text = t
+
+    doc.save(fpath)
+    print(f"EPR报告已生成: {fpath}")
+    return fpath
+
+
+def read_diesel_data(excel_path, year, month):
+    """读取柴油消耗5月数据"""
+    import openpyxl
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    ws = wb['26年单耗计算表 (1-5月) (剔除)']
+
+    # 5月列偏移（每月5列: 目标,实际,单耗,超幅,考核；Q1合计占5列）
+    if month <= 3:
+        col_target = 8 + (month - 1) * 5
+    else:
+        col_target = 8 + (month - 1) * 5 + 5
+    col_actual = col_target + 1
+    col_rate = col_target + 3
+
+    # 柴油行及业务年度目标（col 3 = 全年目标）
+    dept_rows = {
+        "冶炼部": {"row": 16, "annual_col": 7},  # col 7 = 1200812.04
+        "生产保障部": {"row": 18, "annual_col": 3},  # col 3 = 2215798
+        "营销物流部": {"row": 19, "annual_col": 3, "unit": "升"},  # col 3 = 657556, 按量算
+        "电厂部": {"row": 17, "annual_col": 3},  # col 3 = 41014
+    }
+    FIXED_PRICE = 1.10
+
+    results = []
+    for dept, info in dept_rows.items():
+        row_idx = info["row"]
+        # 年度目标
+        annual_col = info.get("annual_col", 3)
+        target_annual = float(ws.cell(row_idx, annual_col).value or 0)
+
+        # 5月数据
+        target_month = ws.cell(row_idx, col_target).value
+        actual_month = ws.cell(row_idx, col_actual).value
+        rate = ws.cell(row_idx, col_rate).value
+
+        target_m = float(target_month) if target_month else 0
+        actual_m = float(actual_month) if actual_month else 0
+        rate_val = float(rate) if rate else 0
+
+        # 如果5月目标为空，用年度/12
+        if target_m == 0 and target_annual > 0:
+            target_m = round(target_annual / 12, 2)
+
+        # 影响数量 = 实际 - 目标
+        impact_qty = round(actual_m - target_m, 2)
+        # 影响金额 = 超预算数量 * 固定价格(只算超的部分)
+        impact_amount = round(max(impact_qty, 0) * FIXED_PRICE, 2) if impact_qty > 0 else 0
+        # 超幅
+        rate_display = f"{rate_val*100:.2f}%" if rate_val > 0 else "/"
+
+        results.append({
+            "dept": dept,
+            "unit": info.get("unit", "升"),
+            "annual_target": target_annual,
+            "month_target": target_m,
+            "month_actual": actual_m,
+            "rate_display": rate_display,
+            "impact_amount": impact_amount,
+        })
+
+    wb.close()
+    return results
+
+
+def read_spare_parts_data(excel_path, year, month):
+    """读取备品备件(指标13) 5月数据"""
+    import openpyxl
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    ws = wb['26年单耗计算表 (1-5月) (剔除)']
+
+    # 5月列偏移
+    if month <= 3:
+        col_target = 8 + (month - 1) * 5
+    else:
+        col_target = 8 + (month - 1) * 5 + 5
+    col_actual = col_target + 1
+    col_rate = col_target + 3
+
+    # 指标13: 备品备件全年消耗 各部门行
+    dept_rows = [
+        ("冶炼部", 23), ("电厂部", 24), ("生产保障部", 25),
+        ("营销物流部", 26), ("安全生产技术部", 27), ("行政部", 28),
+    ]
+
+    results = []
+    for dept, row_idx in dept_rows:
+        annual = ws.cell(row_idx, 3).value  # 全年目标
+        target_m = ws.cell(row_idx, col_target).value
+        actual_m = ws.cell(row_idx, col_actual).value
+        rate = ws.cell(row_idx, col_rate).value
+
+        annual_v = float(annual) if annual else 0
+        target_v = float(target_m) if target_m else 0
+        actual_v = float(actual_m) if actual_m else 0
+        rate_v = float(rate) if rate else 0
+
+        rate_display = f"{rate_v*100:.2f}%" if rate_v else "/"
+
+        results.append({
+            "dept": dept,
+            "annual": annual_v,
+            "month_target": target_v,
+            "month_actual": actual_v,
+            "rate_display": rate_display,
+        })
+
+    wb.close()
+    return results
+
+
+def read_aux_data(excel_path, year, month):
+    """读取辅材(指标14) 5月数据"""
+    import openpyxl
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    ws = wb['26年单耗计算表 (1-5月) (剔除)']
+
+    if month <= 3:
+        col_target = 8 + (month - 1) * 5
+    else:
+        col_target = 8 + (month - 1) * 5 + 5
+    col_actual = col_target + 1
+    col_rate = col_target + 3
+    col_penalty = col_target + 4
+
+    # 指标14: 辅材全年消耗 各部门行
+    dept_rows = [
+        ("冶炼部", 34), ("电厂部", 35), ("生产保障部", 36),
+        ("营销物流部", 37), ("安全生产技术部", 38), ("行政部", 39),
+    ]
+
+    results = []
+    for dept, row_idx in dept_rows:
+        annual = ws.cell(row_idx, 3).value
+        target_m = ws.cell(row_idx, col_target).value
+        actual_m = ws.cell(row_idx, col_actual).value
+        rate = ws.cell(row_idx, col_rate).value
+        penalty_col = ws.cell(row_idx, col_penalty).value
+
+        annual_v = float(annual) if annual else 0
+        target_v = float(target_m) if target_m else 0
+        actual_v = float(actual_m) if actual_m else 0
+        rate_v = float(rate) if rate else 0
+
+        # 超幅(超了显示) / 超支(节约显示)
+        if rate_v > 0:
+            over_rate_display = f"{rate_v*100:.2f}%"
+            saving_rate_display = "/"
+        else:
+            over_rate_display = "/"
+            saving_rate_display = f"{abs(rate_v)*100:.2f}%"
+
+        # 奖罚: 仅冶炼部/电厂部/生产保障部月考核，其余半年考核不按月算
+        if dept in ["营销物流部", "安全生产技术部", "行政部"]:
+            penalty_display = "/"
+        else:
+            diff = actual_v - target_v
+            if diff > 0:
+                penalty_val = round(-(100 + diff * 5 / 1000), 2)
+            else:
+                penalty_val = round(100 + abs(diff) * 5 / 1000, 2)
+            penalty_display = f"{penalty_val:+.0f}"
+
+        results.append({
+            "dept": dept,
+            "annual": annual_v,
+            "month_target": target_v,
+            "month_budget": actual_v,  # 无独立预算数据，用实际代替
+            "month_actual": actual_v,
+            "over_rate_display": over_rate_display,
+            "saving_rate_display": saving_rate_display,
+            "penalty_display": penalty_display,
+        })
+
+    wb.close()
+    return results
+
+
+def read_inventory_data(excel_path, year, month):
+    """读取存货压降(指标15) 5月数据"""
+    import openpyxl
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    ws = wb['26年单耗计算表 (1-5月) (剔除)']
+
+    if month <= 3:
+        col_target = 8 + (month - 1) * 5
+    else:
+        col_target = 8 + (month - 1) * 5 + 5
+    col_actual = col_target + 1
+    col_rate = col_target + 3
+    col_penalty = col_target + 4
+
+    # 存货压降: R46=冶炼部, R47=电厂部, R48=生产保障部 (库存子项)
+    #           R49=冶炼部, R50=电厂部, R51=生产保障部 (辅材子项)
+    inv_rows = [
+        ("库存", "冶炼部", 46), ("库存", "电厂部", 47), ("库存", "生产保障部", 48),
+        ("辅材", "冶炼部", 49), ("辅材", "电厂部", 50), ("辅材", "生产保障部", 51),
+    ]
+
+    results = []
+    for category, dept, row_idx in inv_rows:
+        target_m = ws.cell(row_idx, col_target).value
+        actual_m = ws.cell(row_idx, col_actual).value
+        rate = ws.cell(row_idx, col_rate).value
+        penalty_col = ws.cell(row_idx, col_penalty).value
+
+        target_v = float(target_m) if target_m else 0
+        actual_v = float(actual_m) if actual_m else 0
+        rate_v = float(rate) if rate else 0
+
+        rate_display = f"{rate_v*100:.2f}%" if rate_v else "/"
+
+        # 考核金额: 100 + (实际-目标)万美元×10000×1‰ = 100 + diff万×10
+        diff_wan = actual_v - target_v  # 万美元
+        penalty_val = round(-(100 + diff_wan * 10), 2) if diff_wan > 0 else round(100 + abs(diff_wan) * 10, 2)
+        penalty_display = f"{penalty_val:+.0f}"
+
+        results.append({
+            "category": category,
+            "dept": dept,
+            "target": target_v,
+            "actual": actual_v,
+            "rate_display": rate_display,
+            "penalty_display": penalty_display,
+        })
+
+    wb.close()
+    return results
+
+
+# ============================================================
+# 测试生成5月报告
+# ============================================================
+if __name__ == "__main__":
+    fpath = generate_epr_report(2026, 5)
+    print(f"生成完毕: {fpath}")

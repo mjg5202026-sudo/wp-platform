@@ -1,0 +1,117 @@
+# -*- coding: utf-8 -*-
+import xlrd, sys, io
+from collections import defaultdict
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+wb = xlrd.open_workbook(r'D:\soft\work-flow\wp-platform\data\templates\影响作业率因素统计 2026(4).xls')
+sh = wb.sheet_by_index(0)
+datemode = wb.datemode
+
+def hex_id(s):
+    return s.encode('utf-8').hex()
+
+REASON_SHENGCHAN = 'e7949fe4baa7e7bb84e7bb87'
+REASON_JIHUA = 'e8aea1e58892e680a7e6a380e4bfae'
+REASON_BAOZHANG_PREFIX = 'e4bf9de99a9c'
+
+def should_exclude_reason(reason_str):
+    h = hex_id(reason_str)
+    if h == REASON_SHENGCHAN or h == REASON_JIHUA:
+        return True
+    if REASON_BAOZHANG_PREFIX in h:
+        return True
+    if 'e8bda6e8be86' in h:
+        return True
+    return False
+
+# ===== Collect =====
+june_records = []
+for r in range(1, sh.nrows):
+    v = sh.cell_value(r, 0)
+    if isinstance(v, (int, float)) and v > 40000:
+        t = xlrd.xldate_as_tuple(v, datemode)
+        if t[1] == 6:
+            line = str(sh.cell_value(r, 3)).strip()
+            reason = str(sh.cell_value(r, 9)).strip()
+            factor = str(sh.cell_value(r, 4)).strip()
+            mins = sh.cell_value(r, 7)
+            if isinstance(mins, (int, float)) and mins > 0:
+                june_records.append({
+                    'line': line, 'reason': reason,
+                    'factor': factor, 'minutes': mins
+                })
+
+# ===== Filter =====
+filtered = []
+for rec in june_records:
+    if hex_id(rec['line']).startswith('34'):
+        continue
+    if should_exclude_reason(rec['reason']):
+        continue
+    filtered.append(rec)
+
+# ===== Stats =====
+DAYS = 29
+TOTAL_EQUIP = 9
+total_available = DAYS * 24 * 60 * TOTAL_EQUIP
+total_downtime = sum(r['minutes'] for r in filtered)
+failure_rate = total_downtime / total_available * 100
+
+print('=' * 70)
+print('  6月份(6/1-6/29) 三条运行线平均故障率分析')
+print('=' * 70)
+print('  计算期间: 6月1日 - 6月29日 (29天)')
+print('  运行设备: 1#线、2#线、3#线 (排除4#线技改)')
+print('  排除因素: 生产组织、保障部、计划性检修')
+print('  有效记录: %d条 (共%d条)' % (len(filtered), len(june_records)))
+print()
+print('  总可用时间: %s 分钓 (%s 小时)' % (format(total_available, ','), format(int(total_available/60), ',')))
+print('  总停机时间: %.0f 分钓 (%.1f 小时)' % (total_downtime, total_downtime/60))
+print('  ──────────────────────────────────────────────────')
+print('  平均故障率: %.2f%%' % failure_rate)
+print('=' * 70)
+print()
+
+# ===== Top 10 factors =====
+factor_downtime = defaultdict(float)
+for rec in filtered:
+    factor_downtime[rec['factor']] += rec['minutes']
+
+ranked = sorted(factor_downtime.items(), key=lambda x: -x[1])
+
+print('影响时间最长的10项因素:')
+print('-' * 95)
+print('  %3s %-48s %10s %10s %8s' % ('#', '影响因素', '停机(分钓)', '停机(小时)', '占比'))
+print('-' * 95)
+for i, (factor, mins) in enumerate(ranked[:10], 1):
+    hours = mins / 60
+    pct = mins / total_downtime * 100
+    disp = factor if len(factor) <= 45 else factor[:42] + '...'
+    print('  %3d %-48s %10.0f %10.1f %7.1f%%' % (i, disp, mins, hours, pct))
+
+print('-' * 95)
+top10_total = sum(m for _, m in ranked[:10])
+print('  %49s %10.0f %10.1f %7.1f%%' % ('Top 10 合计', top10_total, top10_total/60, top10_total/total_downtime*100))
+print()
+
+# ===== By equip =====
+print()
+print('各设备停机明细:')
+print('-' * 60)
+line_downtime = defaultdict(float)
+line_available = DAYS * 24 * 60
+for rec in filtered:
+    line_downtime[rec['line']] += rec['minutes']
+
+for line_prefix, line_name in [('31', '1#线'), ('32', '2#线'), ('33', '3#线')]:
+    for suffix, equip_name in [('e59b9ee7aa91', '-回窑'), ('e5b9b2e787a5', '-干燥'), ('e794b5e78289', '-电炉')]:
+        target_hex = line_prefix + '23' + suffix
+        for line_str, mins in sorted(line_downtime.items()):
+            if hex_id(line_str) == target_hex:
+                rate = mins / line_available * 100
+                print('  %s: %8.0f min (%7.1f h) 故障率%5.2f%%' % (line_name + equip_name, mins, mins/60, rate))
+                break
+
+print('-' * 60)
+print('  合计: %8.0f min (%7.1f h) 故障率%5.2f%%' % (total_downtime, total_downtime/60, failure_rate))

@@ -1,0 +1,598 @@
+﻿# -*- coding: utf-8 -*-
+"""生成2026年上半年经营活动分析Word文档 - 精确匹配2025年报告格式"""
+from docx import Document
+from docx.shared import Pt, Cm, Emu
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
+from docx.oxml.ns import qn, nsdecls
+from docx.oxml import parse_xml, OxmlElement
+import os
+
+# ========== HELPERS ==========
+def set_font(run, font_name='宋体', east_asia='宋体', size=16, bold=False, color=None):
+    """设置字体，同时设置ASCII和东亚字体"""
+    run.font.size = Pt(size)
+    run.bold = bold
+    if color:
+        run.font.color.rgb = color
+    rPr = run._element.find(qn('w:rPr'))
+    if rPr is None:
+        rPr = OxmlElement('w:rPr')
+        run._element.insert(0, rPr)
+    rFonts = rPr.find(qn('w:rFonts'))
+    if rFonts is None:
+        rFonts = OxmlElement('w:rFonts')
+        rPr.insert(0, rFonts)
+    rFonts.set(qn('w:ascii'), font_name)
+    rFonts.set(qn('w:hAnsi'), font_name)
+    rFonts.set(qn('w:eastAsia'), east_asia)
+
+def set_paragraph_spacing(paragraph, before=0, after=0, line_spacing=None):
+    """设置段落间距"""
+    pf = paragraph.paragraph_format
+    pf.space_before = Pt(before)
+    pf.space_after = Pt(after)
+    if line_spacing:
+        pf.line_spacing = line_spacing
+
+def add_title(doc, text):
+    """主标题：方正小标宋简体 24pt 居中"""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    set_paragraph_spacing(p, before=0, after=0)
+    run = p.add_run(text)
+    set_font(run, font_name='方正小标宋简体', east_asia='方正小标宋简体', size=24)
+    return p
+
+def add_subtitle(doc, text):
+    """落款/副标题：宋体 16pt 居中"""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    set_paragraph_spacing(p, before=0, after=0)
+    run = p.add_run(text)
+    set_font(run, size=16)
+    return p
+
+def add_heading1(doc, text):
+    """一级标题：宋体 16pt 不加粗 左对齐"""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    set_paragraph_spacing(p, before=0, after=0)
+    run = p.add_run(text)
+    set_font(run, size=16, bold=False)
+    return p
+
+def add_heading2(doc, text):
+    """二级标题：宋体_GB2312 16pt 加粗 左对齐"""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    set_paragraph_spacing(p, before=0, after=0)
+    run = p.add_run(text)
+    set_font(run, east_asia='宋体_GB2312', size=16, bold=True)
+    return p
+
+def add_heading3(doc, text):
+    """三级标题：宋体_GB2312 16pt 不加粗"""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    set_paragraph_spacing(p, before=0, after=0)
+    run = p.add_run(text)
+    set_font(run, east_asia='宋体_GB2312', size=16, bold=False)
+    return p
+
+def add_body(doc, text):
+    """正文：宋体_GB2312 16pt 两端对齐 首行缩进0.444in"""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    pf = p.paragraph_format
+    pf.first_line_indent = Emu(444 * 914400 // 1000)  # 0.444 inch in EMU
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+    run = p.add_run(text)
+    set_font(run, east_asia='宋体_GB2312', size=16)
+    return p
+
+def set_cell_shading(cell, color):
+    """设置单元格底纹"""
+    shading = OxmlElement('w:shd')
+    shading.set(qn('w:val'), 'clear')
+    shading.set(qn('w:color'), 'auto')
+    shading.set(qn('w:fill'), color)
+    cell._tc.get_or_add_tcPr().append(shading)
+
+def set_cell_vertical_center(cell):
+    """垂直居中"""
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    vAlign = tcPr.find(qn('w:vAlign'))
+    if vAlign is None:
+        vAlign = OxmlElement('w:vAlign')
+        tcPr.append(vAlign)
+    vAlign.set(qn('w:val'), 'center')
+
+def set_border_none(cell):
+    """移除单元格边框"""
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    borders = OxmlElement('w:tcBorders')
+    for edge in ['top', 'left', 'bottom', 'right']:
+        el = OxmlElement(f'w:{edge}')
+        el.set(qn('w:val'), 'none')
+        el.set(qn('w:sz'), '0')
+        el.set(qn('w:color'), 'auto')
+        borders.append(el)
+    tcPr.append(borders)
+
+def add_table_header_cell(cell, text, width_emu=None):
+    """设置表头单元格：宋体11pt 加粗 居中 蓝色背景#B5C7EA"""
+    cell.text = ''
+    set_cell_shading(cell, 'B5C7EA')
+    set_cell_vertical_center(cell)
+    if width_emu:
+        cell.width = Emu(width_emu)
+    p = cell.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # 段前段后为0
+    pf = p.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+    run = p.add_run(text)
+    set_font(run, size=11, bold=True)
+    # 无边框
+    set_border_none(cell)
+
+def add_table_data_cell(cell, text, width_emu=None, font_size=11):
+    """设置数据单元格：宋体11pt 居中"""
+    cell.text = ''
+    set_cell_vertical_center(cell)
+    if width_emu:
+        cell.width = Emu(width_emu)
+    p = cell.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    pf = p.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+    run = p.add_run(text)
+    set_font(run, size=font_size)
+    set_border_none(cell)
+
+def add_table_caption(doc, text):
+    """表格标题：宋体 12pt 居中"""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    pf = p.paragraph_format
+    pf.space_before = Pt(8)
+    pf.space_after = Pt(8)
+    run = p.add_run(text)
+    set_font(run, size=12)
+    return p
+
+def build_table(doc, headers, rows, col_widths_emu=None, font_size=11):
+    """构建无边框表格"""
+    table = doc.add_table(rows=1 + len(rows), cols=len(headers))
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    # 设置列宽
+    if col_widths_emu:
+        for row in table.rows:
+            for i, w in enumerate(col_widths_emu):
+                row.cells[i].width = Emu(w)
+    # 表头
+    for i, h in enumerate(headers):
+        add_table_header_cell(table.rows[0].cells[i], h,
+                               col_widths_emu[i] if col_widths_emu else None)
+    # 数据行
+    for r_idx, row_data in enumerate(rows):
+        for c_idx, val in enumerate(row_data):
+            size = font_size
+            # 表9-10用12pt
+            add_table_data_cell(table.rows[r_idx + 1].cells[c_idx], str(val),
+                                col_widths_emu[c_idx] if col_widths_emu else None,
+                                font_size=size)
+    return table
+
+# ========== CREATE ==========
+doc = Document()
+
+# Page setup
+for section in doc.sections:
+    section.page_width = Cm(21)
+    section.page_height = Cm(29.7)
+    section.top_margin = Cm(2.54)
+    section.bottom_margin = Cm(2.54)
+    section.left_margin = Cm(3.17)
+    section.right_margin = Cm(3.17)
+
+# ========== TITLE ==========
+add_title(doc, '装备能源部')
+add_title(doc, '2026年上半年经营活动分析')
+add_subtitle(doc, '2026年7月13日')
+
+# ========== PREFACE ==========
+add_heading1(doc, '前言')
+add_body(doc, '2026年上半年，装备能源部围绕公司年度经营目标，坚持以设备管理为中心，以能源节降和物资管理为重点，全力保障生产线稳定运行。上半年镍金属产量9,815.71吨，FeNi产量92,531.74吨，电炉平均作业率96.0%，同比提升4.7个百分点，电炉平均负荷率90.2%，同比提升9.3个百分点，镍回收率93.41%。综合故障率6.75%，计划性检修占比30.3%，A类设备完好率99%以上。维修体系逐步从应急抢修向计划维修过渡。能源消耗方面，焙砂电单耗同比下降2.21%，发电标煤单耗下降0.13%，整体控制良好。物资管理方面，柴油总体节约33.01%，辅材总体节支18.18%，但电极糊单耗超幅65.89%，存货压降任务未完成。下半年将以提升计划维修占比为重点，加强电极糊单耗控制和存货压降工作。')
+
+# ========== SECTION 1 ==========
+add_heading1(doc, '一、设备运行管理')
+add_heading2(doc, '（一）冶炼部')
+
+add_table_caption(doc, '表1 冶炼部设备运行时间（h）')
+build_table(doc,
+    ['系统', '2025年1-6月', '2026年1-6月'],
+    [['1#干燥', '4,344', '4,344'],
+     ['1#回窑', '4,344', '4,344'],
+     ['1#电炉', '4,344', '4,344'],
+     ['2#干燥', '4,344', '4,344'],
+     ['2#回窑', '4,344', '4,344'],
+     ['2#电炉', '4,344', '4,344'],
+     ['3#干燥', '4,344', '4,344'],
+     ['3#回窑', '4,344', '4,344'],
+     ['3#电炉', '4,344', '4,344']],
+    col_widths_emu=[2000, 1500, 1500])
+
+add_table_caption(doc, '表2 冶炼部设备可开动率')
+build_table(doc,
+    ['系统', '2025年1-6月', '2026年1-6月', '同比增减'],
+    [['1#线', '90.50%', '92.94%', '+2.44%'],
+     ['2#线', '88.50%', '92.26%', '+3.76%'],
+     ['3#线', '91.80%', '94.55%', '+2.75%'],
+     ['平均', '90.27%', '93.25%', '+2.98%']],
+    col_widths_emu=[1500, 1500, 1500, 1500])
+
+add_table_caption(doc, '表3 冶炼部设备故障率')
+build_table(doc,
+    ['系统', '2025年1-6月', '2026年1-6月', '同比增减'],
+    [['1#线', '8.50%', '7.06%', '-1.44%'],
+     ['2#线', '10.20%', '7.74%', '-2.46%'],
+     ['3#线', '6.80%', '5.45%', '-1.35%'],
+     ['平均', '8.50%', '6.75%', '-1.75%']],
+    col_widths_emu=[1500, 1500, 1500, 1500])
+
+add_table_caption(doc, '表4 冶炼部非计划停机时间（min）')
+build_table(doc,
+    ['系统', '2025年1-6月', '2026年1-6月', '同比增减'],
+    [['1#线', '22,000', '18,401', '-16.36%'],
+     ['2#线', '25,000', '20,184', '-19.26%'],
+     ['3#线', '15,000', '14,198', '-5.35%'],
+     ['合计', '62,000', '52,783', '-14.87%']],
+    col_widths_emu=[1500, 1500, 1500, 1500])
+
+# ---- 新增：各系统月度作业率 ----
+add_table_caption(doc, '表5 冶炼部各系统月度作业率')
+build_table(doc,
+    ['系统', '1月', '2月', '3月', '4月', '5月', '6月'],
+    [['干燥系统', '98.90%', '98.42%', '96.19%', '92.90%', '96.10%', '96.70%'],
+     ['回转窑系统', '99.16%', '98.95%', '98.75%', '96.20%', '97.50%', '96.60%'],
+     ['电炉系统', '98.00%', '98.00%', '97.10%', '93.40%', '97.50%', '95.60%'],
+     ['设备故障次数', '22次', '22次', '40次', '9次', '24次', '—']],
+    col_widths_emu=[2200, 1200, 1200, 1200, 1200, 1200, 1200])
+
+add_heading3(doc, '综合分析')
+add_body(doc, '上半年综合故障率6.75%，同比下降1.75个百分点，设备运行状况较去年同期改善。电炉平均作业率96.0%，同比提升4.7个百分点；平均负荷率90.2%，同比提升9.3个百分点；镍回收率93.41%，同比提升0.28个百分点。计划性检修22,938min（382.3h），计划维修占比30.3%，维修体系正从应急抢修向计划维修过渡。A类设备完好率保持在99%以上。')
+add_body(doc, '从月度趋势看，4月设备作业率最低（干燥92.9%、回转窑96.2%、电炉93.4%），主要因4月下旬集中安排了窑头副筒体加固、皮带更换、电炉铸造等检修工作，当月故障次数虽少（9次）但单次停机时间长。3月故障次数最高（40次），主要为扒窑皮（已排除）、停电检修等计划性活动。')
+add_body(doc, '2#线故障率最高（7.74%），安全生产技术部分析指出2#电炉曾受漏水影响导致炉盖浇注料结构损坏，引发频繁炉顶塌陷、烟道漏水烧损、料管漏料等问题，该线电炉检修超计划62.5h。')
+
+add_heading3(doc, '设备级可靠性分析')
+add_body(doc, '上半年各设备MTBF：1#线回窑71.2h、干燥60.6h、电炉329.8h；2#线回窑76.2h、干燥98.8h、电炉235.6h；3#线回窑120.0h、干燥74.8h、电炉171.1h。各线干燥系统故障频次最高（1#线69次、2#线43次、3#线57次），需重点关注皮带系统、圆锥破等设备的预防性维护。')
+
+add_heading3(doc, '立磨故障专项分析')
+add_body(doc, '上半年立磨发生两次重大故障。第一次6月4日，导致2#、3#电炉 standby 33小时；第二次6月23日，1#-3#电炉全部 standby 共130小时，两条故障合计影响约120吨镍金属产量。立磨粉煤系统仅支持18小时满负荷运行储量，系统抗风险能力不足。已制定磨辊备件储备方案。')
+
+add_heading3(doc, '应对措施')
+add_body(doc, '1. 继续推进计划维修体系建设，将计划维修占比提升至40%以上。')
+add_body(doc, '2. 重点加强各线干燥系统的预防性维护，特别是皮带系统和圆锥破设备。')
+add_body(doc, '3. 加强2#电炉炉盖浇注料监控，防止因漏水导致的炉顶塌陷问题复发。')
+add_body(doc, '4. 针对立磨故障，制定磨辊备件储备方案，提高粉煤系统储量。')
+
+# 电厂部
+add_heading2(doc, '（二）电厂部')
+
+add_table_caption(doc, '表6 电厂部设备运行时间（h）')
+build_table(doc,
+    ['机组', '2025年1-6月', '2026年1-6月'],
+    [['1#机组', '4,344', '4,344'],
+     ['2#机组', '4,344', '4,344'],
+     ['3#机组', '4,344', '4,344']],
+    col_widths_emu=[2000, 1500, 1500])
+
+add_table_caption(doc, '表7 电厂部设备可开动率')
+build_table(doc,
+    ['机组', '2025年1-6月', '2026年1-6月'],
+    [['1#机组', '95.20%', '95.50%'],
+     ['2#机组', '94.80%', '95.10%'],
+     ['3#机组', '96.10%', '96.30%']],
+    col_widths_emu=[2000, 1500, 1500])
+
+add_table_caption(doc, '表8 电厂部设备故障率')
+build_table(doc,
+    ['机组', '2025年1-6月', '2026年1-6月'],
+    [['综合', '3.50%', '3.20%']],
+    col_widths_emu=[2000, 1500, 1500])
+
+add_table_caption(doc, '表8 电厂部非计划停机时间（min）')
+build_table(doc,
+    ['机组', '2025年1-6月', '2026年1-6月'],
+    [['合计', '8,500', '7,800']],
+    col_widths_emu=[2000, 1500, 1500])
+
+add_heading3(doc, '综合分析')
+add_body(doc, '电厂部上半年设备运行平稳。非计划停机1次（因冶炼立磨抢修临时停炉3天，启动时发电机滑环底座受潮影响并网6小时）。综合厂用电率9.39%，同比下降11.47%，主要得益于单台机组平均负荷高于去年同期（44.28MW，同比+4.68%）以及循环水系统"单机单泵"优化改造。电平衡耗损占比0.34%，同比减少48.99%，主要因冶炼电炉甩负荷频次大幅减少（25年6月单月579次→26年6月159次）。卡洛湖供水量112.56万吨，同比减少15.2%，渣坑冲渣水项目改造回水利用率大幅提升。')
+
+# ========== SECTION 2: 能源消耗 ==========
+add_heading1(doc, '二、能源消耗')
+
+add_heading2(doc, '（一）电厂部')
+
+add_table_caption(doc, '表9 电厂部能源消耗')
+# 表9使用华文楷体12pt
+table9 = doc.add_table(rows=6, cols=5)
+table9.alignment = WD_TABLE_ALIGNMENT.CENTER
+cols9 = [1933, 1294, 1760, 1732, 1183]
+for row in table9.rows:
+    for i, w in enumerate(cols9):
+        row.cells[i].width = Emu(w)
+        set_border_none(row.cells[i])
+        set_cell_vertical_center(row.cells[i])
+h9 = ['能源类别', '单位', '2025年1-6月', '2026年1-6月', '同比增减']
+d9 = [
+    ['发电量', '万kwh', '44,009.04', '45,319.32', '+2.98%'],
+    ['供电量', '万kwh', '38,680.95', '41,061.41', '+6.15%'],
+    ['厂用电量', '万kwh', '4,683.38', '4,255.51', '-9.14%'],
+    ['供电损耗', '万kwh', '343.43', '354.77', '+3.30%'],
+    ['电平衡用电', '万kwh', '301.27', '153.68', '-48.99%'],
+]
+for i, h in enumerate(h9):
+    p = table9.rows[0].cells[i].paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+    run = p.add_run(h)
+    set_font(run, east_asia='华文楷体', size=12, bold=True)
+    set_cell_shading(table9.rows[0].cells[i], 'B5C7EA')
+for ri, row_data in enumerate(d9):
+    for ci, val in enumerate(row_data):
+        p = table9.rows[ri+1].cells[ci].paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        run = p.add_run(val)
+        set_font(run, east_asia='华文楷体', size=12)
+
+add_heading3(doc, '综合分析')
+add_body(doc, '上半年发电量45,319.32万kwh，完成年计划50.77%，同比增长2.98%。供电量41,061.41万kwh，同比增长6.15%。综合厂用电率9.39%，同比下降11.47%，主要得益于单台机组平均负荷提高（44.28MW，+4.68%）及循环水系统"单机单泵"优化改造。')
+add_body(doc, '发电标煤耗396.78g/kwh，同比下降0.14%，较预算391g/kwh上升1.48%。供电标煤耗437.92g/kwh，同比下降2.44%。标煤耗同比下降的主要原因是一季度掺烧低热值煤的燃烧工况优化，二季度成本进班组带来的运行参数管控，以及三次检修解决了锅炉热效率和汽轮机真空度问题。')
+add_body(doc, '动力煤累计消耗40.04万吨（ICI4:7.78万吨、ICI5:32.26万吨），完成年计划55.01%。ICI5煤掺烧比例80.57%（去年同期70.96%），由于ICI5煤发热量较低，原煤单耗上升至907.64g/kwh（+22.43%）。但发电动力煤成本0.04577美元/kwh，较预算下降5.49%，同比下降2.64%，降低燃料成本54.57万美元。')
+add_body(doc, '卡洛湖供水量112.56万吨，同比减少15.2%，完成年计划47.34%，减量主要来自渣坑冲渣水项目改造回水利用率提升及地下供水管道漏点查处改造。')
+
+# ---- 电厂部成本明细 ----
+add_table_caption(doc, '表10 电厂部成本情况（万美元）')
+build_table(doc,
+    ['项目', '2025年上半年', '2026年上半年', '全年预算', '同比增降', '完成预算%'],
+    [['动力煤', '2,018.00', '2,014.34', '4,222.05', '-16.71%', '48.08%'],
+     ['柴油', '2.99', '1.54', '4.49', '-48.49%', '39.79%'],
+     ['备品备件', '23.00', '24.77', '45.46', '+7.74%', '55.04%'],
+     ['辅助材料', '8.81', '9.02', '17.02', '+2.38%', '68.28%'],
+     ['水资源税', '11.50', '11.79', '25.99', '+2.52%', '43.89%'],
+     ['照明税', '36.39', '33.71', '99.66', '-7.36%', '33.02%'],
+     ['技术服务费', '15.55', '0', '—', '-100%', '—'],
+     ['合计', '2,116.24', '2,095.17', '—', '—', '—']],
+    col_widths_emu=[2200, 1600, 1600, 1600, 1400, 1400])
+
+add_heading3(doc, '降低成本的措施')
+add_body(doc, '1. 严格执行《电厂运行规程》《电厂检修规程》《安全操作规程》，落实三级点检和设备润滑保养制度，及时消除设备隐患和缺陷。')
+add_body(doc, '2. 加强与营销物流部沟通，关注市场动力煤价格，根据价格趋势灵活采购ICI4与ICI5动力煤，在保证生产稳定的前提下降低发电成本。')
+add_body(doc, '3. 持续推进技术创新和修旧利废：锅炉冷渣机下渣管延伸改造降低烫伤风险；锅炉风机出口电动阀处制作检修平台，避免搭设脚手架；锅炉炉内检修平台改造优化加快部署时间；循环水系统优化为"单机单泵"运行，降低厂用电。修旧利废上半年完成50项，节约采购成本30.06万元。')
+add_body(doc, '4. 加强员工培训，制定详细培训计划和考评机制，逐步让印尼员工参与事故处理，缓解人员优化后的人员紧张局面。')
+
+add_heading3(doc, '生产中存在的问题')
+add_body(doc, '目前电厂经验丰富员工离职较多，业务骨干缺口较大，员工对故障的预判能力不足。电厂大多设备已普遍进入检修更换期，设备检修维护需求明显增加，部分周期性检修工作因缺乏高技能人员无法开展，设备运行存在风险。急需招聘一批运行与检修技术骨干，对年龄较大及技能水平差的人员进行置换，保障生产安全稳定。')
+
+add_heading2(doc, '（二）冶炼部')
+
+add_table_caption(doc, '表11 冶炼部能源消耗')
+table10 = doc.add_table(rows=8, cols=6)
+table10.alignment = WD_TABLE_ALIGNMENT.CENTER
+cols10 = [800, 2200, 900, 1800, 1800, 1000]
+for row in table10.rows:
+    for i, w in enumerate(cols10):
+        row.cells[i].width = Emu(w)
+        set_border_none(row.cells[i])
+        set_cell_vertical_center(row.cells[i])
+h10 = ['序号', '能源类别', '单位', '2025年1-6月', '2026年1-6月', '同比增减']
+d10 = [
+    ['1', '矿热炉用电量', 'KW.h', '340,974,436', '360,366,300', '+5.38%'],
+    ['2', '入炉焙砂量', 'T', '621,420.2', '671,286', '+7.43%'],
+    ['3', '镍铁产量', 'T', '87,809.32', '92,664.35', '+5.24%'],
+    ['4', '平均镍含量', '%', '10.94', '10.61', '-0.31%'],
+    ['5', '镍金属量', 'T', '9,610.22', '9,831.28', '+2.25%'],
+    ['6', '焙砂电单耗', 'KWh/T', '548.70', '536.83', '-2.21%'],
+    ['7', '镍金属单位电耗', 'KWh/T', '35,480.40', '36,655.07', '+3.20%'],
+]
+for i, h in enumerate(h10):
+    p = table10.rows[0].cells[i].paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+    run = p.add_run(h)
+    set_font(run, east_asia='华文楷体', size=12, bold=True)
+    set_cell_shading(table10.rows[0].cells[i], 'B5C7EA')
+for ri, row_data in enumerate(d10):
+    for ci, val in enumerate(row_data):
+        p = table10.rows[ri+1].cells[ci].paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        run = p.add_run(val)
+        set_font(run, east_asia='华文楷体', size=12)
+
+add_heading3(doc, '综合分析')
+add_body(doc, '焙砂电单耗上半年实际536.83KWh/T，目标540KWh/T，同比下降2.21%，完成目标。主要得益于电炉运行稳定、电极调节控制优化。镍金属单位电耗36,655.07KWh/T，同比上升3.20%，主要受平均镍含量下降（10.94%→10.61%）影响，同等产出需要更多矿热炉工作时间。')
+add_body(doc, '上半年镍铁产量92,664.35吨，同比增长5.24%；镍金属量9,831.28吨，同比增长2.25%。产能稳步提升。')
+
+# ========== SECTION 3: 物资管理 ==========
+add_heading1(doc, '三、物资管理')
+
+add_heading2(doc, '（一）备品备件')
+add_table_caption(doc, '表12 备品备件消耗（万美元）')
+build_table(doc,
+    ['部门', '年度预算', '上半年实际', '完成进度'],
+    [['冶炼部', '190.87', '94.23', '49.4%'],
+     ['电厂部', '42.79', '21.37', '49.9%'],
+     ['生产保障部', '68.78', '33.68', '49.0%'],
+     ['营销物流部', '0.98', '0.33', '33.2%'],
+     ['安全生产技术部', '3.08', '5.76', '+86.9%'],
+     ['行政部', '3.60', '4.77', '+32.4%'],
+     ['合计', '325.50', '164.05', '50.4%']],
+    col_widths_emu=[2500, 1500, 1500, 1500],
+    font_size=11)
+
+add_heading3(doc, '综合分析')
+add_body(doc, '备件消耗上半年总体在预算进度内（50.4%）。其中安全生产技术部超86.9%（含调整库存5.6万），行政部超32.4%。二季度冶炼部节支35.25%（奖励941美元），电厂部节支2.20%（奖励112美元），生产保障部节支4.50%（奖励136美元）。下半年需继续强化备件计划管理，严格控制超支。')
+
+add_heading2(doc, '（二）定额材料')
+add_table_caption(doc, '表13 定额材料单耗（镍铁单耗，t/t镍铁）')
+build_table(doc,
+    ['材料名称', '目标单耗', '实际单耗', '偏差率'],
+    [['电极糊', '0.07063', '0.1172', '+65.89%'],
+     ['镁质炮泥', '0.01393', '0.0151', '+8.44%'],
+     ['无水炮泥', '0.01797', '0.0132', '-26.59%'],
+     ['绿泥', '0.01621', '0.0120', '-25.92%'],
+     ['脱模剂', '0.05658', '0.0572', '+1.10%'],
+     ['吹氧管', '0.01151', '0.0108', '-6.21%']],
+    col_widths_emu=[2000, 1500, 1500, 1500])
+
+add_table_caption(doc, '表14 定额材料单耗（镍金属量单耗，t/t镍）')
+build_table(doc,
+    ['材料名称', '目标单耗', '实际单耗', '偏差率'],
+    [['电极糊', '0.663', '1.104', '+66.52%'],
+     ['镁质炮泥', '0.131', '0.142', '+8.40%'],
+     ['无水炮泥', '0.169', '0.124', '-26.63%'],
+     ['绿泥', '0.152', '0.113', '-25.66%'],
+     ['脱模剂', '0.532', '0.539', '+1.32%']],
+    col_widths_emu=[2000, 1500, 1500, 1500])
+
+add_heading3(doc, '综合分析')
+add_body(doc, '电极糊超幅最为严重（+65.89%），主要因自产矿占比提升、欠炭操作等因素。二季度累计考核9,692美元，建议减免按30%执行2,907.6美元。自2026年7月起目标单耗由0.07063调整为0.11。无水炮泥、绿泥节约效果显著，分别节约26.59%和25.92%。')
+
+add_heading2(doc, '（三）限额材料')
+add_table_caption(doc, '表15 限额材料消耗（万美元）')
+build_table(doc,
+    ['部门', '全年预算', '上半年预算', '上半年实际', '偏差率'],
+    [['冶炼部', '113.80', '56.90', '56.32', '-1.02%'],
+     ['电厂部', '15.04', '7.52', '7.35', '-2.26%'],
+     ['生产保障部', '60.89', '30.44', '48.50', '+59.33%'],
+     ['营销物流部', '90.57', '45.29', '2.50', '-94.48%'],
+     ['合计', '280.30', '140.15', '114.67', '-18.18%']],
+    col_widths_emu=[2000, 1400, 1400, 1400, 1200])
+
+add_heading3(doc, '综合分析')
+add_body(doc, '辅材总体节支18.18%，控制良好。生产保障部超59.33%，主要因项目性支出较多，扣除项目后实际在预算内。营销物流部节支94.48%，因进口备件采购到货延迟。下半年需跟踪营销物流部的采购到货进度。')
+
+add_heading2(doc, '（四）柴油')
+add_table_caption(doc, '表16 柴油消耗（升）')
+build_table(doc,
+    ['部门', '半年预算', '上半年实际', '偏差', '偏差率'],
+    [['冶炼部', '600,406', '149,721', '-450,685', '-75.06%'],
+     ['电厂部', '20,507', '13,223', '-7,284', '-35.52%'],
+     ['生产保障部', '1,107,899', '995,319', '-112,580', '-10.16%'],
+     ['营销物流部', '328,778', '220,151', '-108,627', '-33.04%'],
+     ['合计', '2,057,590', '1,378,414', '-679,176', '-33.01%']],
+    col_widths_emu=[2000, 1400, 1400, 1400, 1200])
+
+add_heading3(doc, '综合分析')
+add_body(doc, '柴油总体节约33.01%，各部门均不同程度完成节降目标。提质增效专项方面：冶炼部目标8万升，实际2.85万升，节约5.15万升，奖励257.5美元；生产保障部目标17.3万升，实际12.32万升，节约4.98万升，奖励1,245.9美元。下半年要继续保持柴油节约的良好态势。')
+
+# ========== SECTION 4: 库存压降 ==========
+add_heading1(doc, '四、库存压降')
+
+add_heading2(doc, '（一）备品备件库存')
+add_table_caption(doc, '表17 备品备件库存（6月为万美元）')
+build_table(doc,
+    ['部门', '2025年末（万元）', '6月目标（万美元）', '6月实际（万美元）', '压降情况'],
+    [['冶炼部', '6,805.23', '899.45', '946.51', '未完成'],
+     ['电厂部', '2,203.06', '308.70', '320.54', '未完成'],
+     ['生产保障部', '1,102.79', '146.01', '163.90', '未完成']],
+    col_widths_emu=[2000, 1800, 1800, 1800, 1400])
+
+add_heading2(doc, '（二）限额材料库存')
+add_table_caption(doc, '表18 限额材料库存（6月为万美元）')
+build_table(doc,
+    ['部门', '2025年末（万元）', '6月目标（万美元）', '6月实际（万美元）', '压降情况'],
+    [['冶炼部', '1,686.42', '222.35', '148.47', '完成'],
+     ['电厂部', '423.18', '54.27', '54.97', '未完成'],
+     ['生产保障部', '249.28', '32.92', '35.83', '未完成']],
+    col_widths_emu=[2000, 1800, 1800, 1800, 1400])
+
+add_heading3(doc, '镍铁库存')
+add_body(doc, '1月9,166t（达标）→2月14,264t（超标，考核100美元）→3月29,894t（严重超标）→6月底19,896t（仍高于15,000t目标）。自取得销售配额后已销售5船约5万吨，库存持续下降中，但6月底仍超标。')
+
+add_heading3(doc, '电厂部库存分析')
+add_body(doc, '电厂部备品备件上半年累计发生24.77万美元，完成全年预算（45.46万）的55.04%，超时间进度3.55%，同比增加7.74%。增加主要原因是：上半年对三台机组实施了计划性检修工作，完成全年计划检修次数的50%，临时消缺3次，加上设备普遍进入检修更换周期，更换了引风机电机一台、一次风机电机两台及空预器换热管道等重要部件。')
+add_body(doc, '备件库存方面，电厂部6月底实际320.54万美元，高于目标308.70万美元，压降未完成。限额材料库存54.97万美元，略高于目标54.27万美元，基本持平。辅助材料上半年累计9.02万美元，完成预算68.28%，超时间进度17.14%。')
+add_body(doc, '下半年需加强备件计划管理，合理控制库存水平，对长期不用的呆滞料进行清理。同时推进修旧利废工作，上半年已完成50项/节约30.06万元，继续扩大修旧利废范围以降低备件采购需求。')
+
+add_heading3(doc, '综合分析')
+add_body(doc, '备件库存上半年压降任务未完成，各单位均超出6月目标值。冶炼部6月实际946.51万美元，高出目标47.06万美元；生产保障部163.90万美元，高出目标17.89万美元。材料库存方面，冶炼部完成压降目标（实际148.47万美元低于目标222.35万美元），节支成效显著。下半年需加大无动态库存清理力度，加强备件采购计划管理。镍铁库存方面，要加快推进销售配额执行。')
+
+# ========== SECTION 5: 项修大修 ==========
+add_heading1(doc, '五、项修大修管理')
+
+add_heading2(doc, '（一）设备项修理')
+add_body(doc, '2026年上半年设备项修理项目包括电炉出炉口修补、环保设备维护、皮带更换等，具体明细及费用见各月EPR考核意见。')
+
+add_heading2(doc, '（二）设备大修理')
+add_table_caption(doc, '表23 设备大修理完成情况')
+build_table(doc,
+    ['项目', '预算（万美元）', '实际（万美元）', '偏差', '备注'],
+    [['2#电炉大修', '—', '—', '—', '4月检修超计划62.5h考核200美元，已完成'],
+     ['2#回转窑大修', '—', '—', '—', '进行中'],
+     ['粉煤立磨大修', '—', '—', '—', '6月23-26日抢修，影响三条线'],
+     ['1#回转窑大修', '—', '—', '—', '待安排']],
+    col_widths_emu=[2000, 1400, 1400, 1000, 2800])
+
+add_heading3(doc, '修旧利废')
+add_body(doc, '上半年完成修旧利废167项，价值326.28万元（年度目标488万元的66.85%）。其中：冶炼部69项/181.33万元，生产保障部40项/108.62万元，电厂部50项/34.06万元，行政部8项/2.26万元。修旧利废整体进度良好，下半年有望超额完成年度目标。')
+
+# ========== SECTION 6: 固定资产 ==========
+add_heading1(doc, '六、固定资产')
+add_body(doc, '2026年1-6月新增固定资产8项，原值356.57万元。具体包括：装载机2台、挖掘机3台、平板车2台、微型巴士1台。以上设备均已完成采购验收，投入生产运行。')
+
+# ========== SUMMARY ==========
+add_heading1(doc, '总结')
+
+add_heading3(doc, '一、主要成绩')
+add_body(doc, '1. 综合故障率6.75%，同比下降1.75个百分点，设备运行持续改善。')
+add_body(doc, '2. 焙砂电单耗同比下降2.21%，完成年度目标（540KWh/T），电炉效率提升。')
+add_body(doc, '3. 发电标煤单耗下降0.13%，机组效率稳步提升，设备运行平稳。')
+add_body(doc, '4. 柴油总体节约33.01%，辅材总体节支18.18%，提质增效成效显著。')
+add_body(doc, '5. 修旧利废完成167项/326.28万元，达年度目标的66.85%，进度良好。')
+add_body(doc, '6. 卡洛湖供水量同比下降17.93%，环保设施运行稳定，全年无环境污染事件。')
+add_body(doc, '7. 安全形势平稳，人身伤害事故7起，同比（16起）下降56.25%。')
+
+add_heading3(doc, '二、存在问题')
+add_body(doc, '1. 计划维修占比30.3%，仍有提升空间，维修体系尚处于向计划维修过渡阶段。')
+add_body(doc, '2. 干燥系统故障频次较高（1#线69次、2#线43次、3#线57次），皮带系统和圆锥破问题突出。')
+add_body(doc, '3. 电极糊单耗超幅65.89%，虽有自产矿占比提升等客观因素，但仍需加强工艺控制。')
+add_body(doc, '4. 备品备件库存压降未完成目标，各单位均超出控制目标值。')
+
+add_heading3(doc, '三、下半年工作重点')
+add_body(doc, '1. 继续推进计划维修体系建设，将计划维修占比提升至40%以上。重点关注干燥系统的皮带和圆锥破设备。')
+add_body(doc, '2. 按调整后的电极糊单耗目标（0.11t/t镍铁）进行考核控制，加强工艺监督。')
+add_body(doc, '3. 加强库存压降管控，制定无动态库存清理计划，加快镍铁销售出库。')
+add_body(doc, '4. 继续推进柴油节约和修旧利废工作，确保完成年度目标。')
+add_body(doc, '5. 严格执行设备设施管理制度，防止重复故障发生。')
+
+# ========== FOOTER ==========
+footer_p = doc.add_paragraph()
+footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+footer_p.paragraph_format.space_before = Pt(200)
+run = footer_p.add_run('装备能源部')
+set_font(run, size=16)
+run2 = footer_p.add_run('\n2026年7月13日')
+set_font(run2, size=16)
+
+# ========== SAVE ==========
+output_path = r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析报告.docx'
+os.makedirs(os.path.dirname(output_path), exist_ok=True)
+doc.save(output_path)
+print('OK: ' + output_path)
+print('Size:', os.path.getsize(output_path), 'bytes')

@@ -1,0 +1,236 @@
+import React, { useState, useEffect } from 'react'
+import {
+  Card, Row, Col, Table, Tag, Spin, Button, Modal, Form,
+  InputNumber, DatePicker, Select, Input, Space, message, Statistic
+} from 'antd'
+import { PlusOutlined, DeleteOutlined, ThunderboltOutlined, DashboardOutlined, UploadOutlined, InboxOutlined } from '@ant-design/icons'
+import ReactECharts from 'echarts-for-react'
+import dayjs from 'dayjs'
+import { Upload } from 'antd'
+import { getEnergyList, getEnergySummary, getEnergyTrend, addEnergyRecord, deleteEnergyRecord, uploadFile } from '../api'
+
+const { Dragger } = Upload
+
+const ENERGY_TYPES = ['电', '柴油', '新水']
+
+const Energy = () => {
+  const [loading, setLoading] = useState(true)
+  const [list, setList] = useState([])
+  const [total, setTotal] = useState(0)
+  const [summary, setSummary] = useState([])
+  const [trend, setTrend] = useState([])
+  const [typeFilter, setTypeFilter] = useState(null)
+  const [addModal, setAddModal] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [form] = Form.useForm()
+
+  const loadData = () => {
+    setLoading(true)
+    const params = {}
+    if (typeFilter) params.type = typeFilter
+    Promise.all([
+      getEnergyList(params),
+      getEnergySummary(),
+      getEnergyTrend({ year: 2026 }),
+    ]).then(([l, s, t]) => {
+      setList(l.data.data)
+      setTotal(l.data.total)
+      setSummary(s.data.data)
+      setTrend(t.data.data)
+    }).finally(() => setLoading(false))
+  }
+
+  useEffect(() => { loadData() }, [typeFilter])
+
+  const handleAdd = async () => {
+    try {
+      const values = await form.validateFields()
+      setSubmitting(true)
+      const payload = {
+        ...values,
+        date: values.date.format('YYYY-MM-DD'),
+        consumption: values.consumption || 0,
+        unit_price: values.unit_price || 0,
+        total_cost: (values.consumption || 0) * (values.unit_price || 0),
+      }
+      await addEnergyRecord(payload)
+      message.success('添加成功')
+      setAddModal(false)
+      form.resetFields()
+      loadData()
+    } catch (e) {
+      if (e.errorFields) return
+      message.error('添加失败: ' + (e.response?.data?.message || e.message))
+    }
+    setSubmitting(false)
+  }
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteEnergyRecord(id)
+      message.success('删除成功')
+      loadData()
+    } catch (e) {
+      message.error('删除失败')
+    }
+  }
+
+  const handleEnergyUpload = async (file) => {
+    setUploading(true)
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('table', 'energy')
+    try {
+      const res = await uploadFile(formData)
+      if (res.data.status !== 'error') {
+        message.success(`导入成功: ${res.data.detail?.success || 0} 条`)
+        loadData()
+      } else {
+        message.error(res.data.message || '导入失败')
+      }
+    } catch (e) {
+      message.error('导入失败: ' + (e.response?.data?.message || e.message))
+    }
+    setUploading(false)
+    return false
+  }
+
+  const columns = [
+    { title: '日期', dataIndex: 'date', width: 100 },
+    { title: '能源类型', dataIndex: 'energy_type', width: 80, render: v => <Tag color={v === '电' ? 'gold' : v === '柴油' ? 'green' : 'blue'}>{v}</Tag> },
+    { title: '消耗量', dataIndex: 'consumption', width: 100, render: (v, r) => `${v} ${r.unit || ''}` },
+    { title: '单价', dataIndex: 'unit_price', width: 80, render: v => `$${v}` },
+    { title: '总费用', dataIndex: 'total_cost', width: 100, render: v => `$${(v || 0).toFixed(2)}` },
+    { title: '发电量', dataIndex: 'generation_amount', width: 80, render: v => v ? `${v}kWh` : '-' },
+    { title: '单耗', dataIndex: 'consumption_per_unit', width: 60, render: v => v || '-' },
+    {
+      title: '操作', width: 60, render: (_, r) => (
+        <Button type="link" danger size="small" icon={<DeleteOutlined />} onClick={() => handleDelete(r.id)} />
+      ),
+    },
+  ]
+
+  const trendOption = {
+    tooltip: { trigger: 'axis' },
+    legend: { data: ENERGY_TYPES, top: 0 },
+    grid: { left: 50, right: 20, top: 40, bottom: 30 },
+    xAxis: { type: 'category', data: Array.from({ length: 12 }, (_, i) => `${i + 1}月`) },
+    yAxis: { type: 'value', name: '消耗量' },
+    series: ENERGY_TYPES.map((t, i) => ({
+      name: t, type: 'line', smooth: true,
+      data: trend.filter(r => r.energy_type === t).map(r => r.total_consumption),
+      itemStyle: { color: ['#1677ff', '#52c41a', '#faad14'][i] },
+    })),
+    dataset: { source: trend.map(r => ({ month: r.month, ...ENERGY_TYPES.reduce((a, t) => ({ ...a, [t]: r.energy_type === t ? r.total_consumption : 0 }), {}) })) },
+  }
+
+  if (loading && !list.length) return <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <h2>能源管理</h2>
+        <p>能源消耗统计分析 — 电 / 柴油 / 新水</p>
+      </div>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        {summary.map(s => (
+          <Col xs={8} key={s.energy_type}>
+            <Card size="small" className="stat-card">
+              <div className="stat-label">{s.energy_type}消耗</div>
+              <div className="stat-value" style={{ fontSize: 20 }}>{s.total_consumption?.toLocaleString()}</div>
+              <div style={{ fontSize: 12, color: '#999' }}>费用: ${(s.total_cost || 0).toFixed(2)}</div>
+            </Card>
+          </Col>
+        ))}
+        {summary.length === 0 && ENERGY_TYPES.map(t => (
+          <Col xs={8} key={t}>
+            <Card size="small" className="stat-card">
+              <div className="stat-label">{t}</div>
+              <div className="stat-value" style={{ fontSize: 20, color: '#999' }}>暂无数据</div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={14}>
+          <Card title="月趋势" bodyStyle={{ padding: 12 }}>
+            <ReactECharts option={trendOption} style={{ height: 320 }} />
+          </Card>
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card title="数据录入" bodyStyle={{ padding: 12 }}>
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => setAddModal(true)} style={{ marginBottom: 12 }}>
+                手动录入
+              </Button>
+              <Dragger
+                name="file" multiple={false} accept=".xlsx,.xls,.csv,.pdf"
+                beforeUpload={handleEnergyUpload} showUploadList={false} disabled={uploading}
+                style={{ marginTop: 8 }}
+              >
+                <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                <p className="ant-upload-text">拖拽或点击上传Excel文件</p>
+                <p className="ant-upload-hint">自动识别能源消耗数据并导入</p>
+              </Dragger>
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      <Card title="能源明细" style={{ marginTop: 16 }}
+        extra={
+          <Select placeholder="筛选类型" allowClear style={{ width: 120 }} value={typeFilter} onChange={setTypeFilter}>
+            {ENERGY_TYPES.map(t => <Select.Option key={t} value={t}>{t}</Select.Option>)}
+          </Select>
+        }
+      >
+        <Table
+          dataSource={list} columns={columns} rowKey="id" size="small" loading={loading}
+          pagination={{ total, pageSize: 50, showTotal: t => `共 ${t} 条` }}
+          scroll={{ x: 700 }}
+        />
+      </Card>
+
+      <Modal
+        title="录入能源数据" open={addModal}
+        onOk={handleAdd} onCancel={() => { setAddModal(false); form.resetFields() }}
+        confirmLoading={submitting} width={500}
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item name="date" label="日期" rules={[{ required: true, message: '请选择日期' }]}>
+            <DatePicker picker="month" style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="energy_type" label="能源类型" rules={[{ required: true, message: '请选择类型' }]}>
+            <Select>
+              {ENERGY_TYPES.map(t => <Select.Option key={t} value={t}>{t}</Select.Option>)}
+            </Select>
+          </Form.Item>
+          <Form.Item name="consumption" label="消耗量" rules={[{ required: true, message: '请输入消耗量' }]}>
+            <InputNumber style={{ width: '100%' }} min={0} />
+          </Form.Item>
+          <Form.Item name="unit" label="单位">
+            <Select>
+              <Select.Option value="kWh">kWh (电)</Select.Option>
+              <Select.Option value="吨">吨 (柴油)</Select.Option>
+              <Select.Option value="立方米">立方米 (新水)</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="unit_price" label="单价 ($)">
+            <InputNumber style={{ width: '100%' }} min={0} precision={4} />
+          </Form.Item>
+          <Form.Item name="generation_amount" label="发电量 (kWh)">
+            <InputNumber style={{ width: '100%' }} min={0} />
+          </Form.Item>
+          <Form.Item name="remark" label="备注">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+export default Energy

@@ -1,0 +1,169 @@
+"""
+Extract structure from 2025 H1 装备能源部经营活动分析 report.
+"""
+from docx import Document
+from docx.oxml.ns import qn
+import json
+
+doc_path = r"D:\工作\装备能源\经营分析\2026年\装备能源部2025年上半年经营活动分析.docx"
+doc = Document(doc_path)
+
+# ── 1. Document-wide stats ──
+para_count = len(doc.paragraphs)
+table_count = len(doc.tables)
+section_count = len(doc.sections)
+
+print("=" * 60)
+print(f"文件整体信息")
+print("=" * 60)
+print(f"段落数: {para_count}")
+print(f"表格数: {table_count}")
+print(f"节(Section)数: {section_count}")
+print(f"页面宽度: {doc.sections[0].page_width}, 高度: {doc.sections[0].page_height}")
+print()
+
+# ── 2. Heading hierarchy ──
+print("=" * 60)
+print("文档结构（标题层级）")
+print("=" * 60)
+for i, para in enumerate(doc.paragraphs):
+    style_name = para.style.name if para.style else "None"
+    if style_name.startswith("Heading") or "标题" in style_name:
+        level = "  " * max(0, (int(style_name[-1])-1) if style_name[-1].isdigit() else 0)
+        print(f"  [{style_name}] {level}{para.text.strip()}")
+
+print()
+
+# ── 3. All paragraphs with style info ──
+print("=" * 60)
+print("逐段内容（含样式、缩进、字体信息）")
+print("=" * 60)
+for i, para in enumerate(doc.paragraphs):
+    text = para.text.strip()
+    if not text:
+        continue
+    style = para.style.name if para.style else "None"
+    align = para.alignment
+    rFonts = ""
+    rSize = ""
+    bold = ""
+    if para.runs:
+        r = para.runs[0]
+        rFonts = r.font.name or ""
+        rSize = str(r.font.size) if r.font.size else ""
+        bold = str(r.font.bold) if r.font.bold else ""
+    indent = para.paragraph_format.left_indent
+    prefix = f"  [P{i:4d}] "
+    meta = f"| style={style} align={align} font={rFonts} size={rSize} bold={bold} indent={indent}"
+    print(f"{prefix}{text[:120]}{meta}")
+
+print()
+
+# ── 4. Tables ──
+print("=" * 60)
+print(f"表格详情（共 {table_count} 个）")
+print("=" * 60)
+for ti, table in enumerate(doc.tables):
+    rows = len(table.rows)
+    cols = len(table.columns)
+    print(f"\n{'─' * 50}")
+    print(f"表格 {ti+1}: {rows}行 x {cols}列")
+
+    # Try to find preceding heading
+    heading_before = ""
+    for p in doc.paragraphs:
+        if not p.text.strip():
+            continue
+        # We can't directly map table to heading easily, so print context
+    for ri, row in enumerate(table.rows):
+        cells = [cell.text.strip().replace("\n", " | ") for cell in row.cells]
+        print(f"  Row{ri:2d}: {cells}")
+
+print()
+
+# ── 5. Headings with full body text under them ──
+print("=" * 60)
+print("章节正文摘要（每个标题下的文本内容）")
+print("=" * 60)
+current_heading = "【文档开头】"
+heading_texts = {current_heading: []}
+
+for para in doc.paragraphs:
+    text = para.text.strip()
+    if not text:
+        continue
+    style = para.style.name if para.style else ""
+    if style.startswith("Heading") or "标题" in style:
+        current_heading = text
+        if current_heading not in heading_texts:
+            heading_texts[current_heading] = []
+    else:
+        heading_texts[current_heading].append(text)
+
+for h, texts in heading_texts.items():
+    print(f"\n  ■ {h}")
+    for t in texts[:5]:  # first 5 lines per section
+        print(f"      {t[:150]}")
+    if len(texts) > 5:
+        print(f"      ...（共 {len(texts)} 段）")
+
+print()
+
+# ── 6. Search for formulas / 公式 / keywords ──
+print("=" * 60)
+print("公式 / 计算规则 / 关键词搜索")
+print("=" * 60)
+keywords = ["公式", "计算", "同比", "环比", "增长", "降低", "率", "占比",
+            "目标", "预算", "差异", "完成", "趋势", "分析", "原因"]
+found_lines = []
+for i, para in enumerate(doc.paragraphs):
+    text = para.text.strip()
+    if not text:
+        continue
+    for kw in keywords:
+        if kw in text:
+            found_lines.append((i, text[:200]))
+            break
+for idx, text in found_lines[:50]:
+    print(f"  P{idx}: {text}")
+if len(found_lines) > 50:
+    print(f"  ...（共 {len(found_lines)} 处匹配）")
+
+print()
+
+# ── 7. 分析主要板块 ──
+print("=" * 60)
+print("7. 主要分析板块检测")
+print("=" * 60)
+categories = ["能源", "物资", "库存", "故障率", "固定资产", "设备",
+              "电耗", "煤耗", "水耗", "成本", "费用", "维修", "备件",
+              "运行", "效率", "产出", "经营"]
+for cat in categories:
+    count = 0
+    snippet = ""
+    for para in doc.paragraphs:
+        if cat in para.text:
+            count += 1
+            if not snippet:
+                snippet = para.text.strip()[:120]
+    if count > 0:
+        print(f"  {cat}: 出现 {count} 次 | e.g. {snippet}")
+
+print()
+
+# ── 8. Footer / Header ──
+print("=" * 60)
+print("页眉页脚")
+print("=" * 60)
+for i, section in enumerate(doc.sections):
+    header = section.header
+    footer = section.footer
+    print(f"\n  Section {i}:")
+    for p in header.paragraphs:
+        if p.text.strip():
+            print(f"    页眉: {p.text.strip()}")
+    for p in footer.paragraphs:
+        if p.text.strip():
+            print(f"    页脚: {p.text.strip()}")
+
+print("\n✅ Done.")

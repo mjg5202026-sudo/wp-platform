@@ -1,0 +1,88 @@
+---
+name: 机关公文格式
+description: 按国家标准机关公文格式设置字体、字号、行距、页边距等参数
+metadata:
+  type: skill
+  version: 1.0
+triggers:
+  - 公文格式
+  - 机关公文
+  - 红头文件
+  - 正式公文
+---
+
+# 机关公文格式设置规范
+
+按国家标准设置 docx 文档格式。通过 docx-js 生成。
+
+## 字体字号
+
+| 元素 | 字体 | docx-js size |
+|------|------|-------------|
+| **标题** | 方正小标宋简体 | 44 (22pt) |
+| **正文** | 仿宋\_GB2312 | 32 (16pt) |
+| **一级标题（一、二、三）** | 黑体 | 32 (16pt) |
+| **二级标题（（一）（二）（三））** | 楷体\_GB2312 | 32 (16pt) |
+| **三级标题（1. 2. 3.）** | 仿宋\_GB2312 | 32 (16pt) |
+| **四级标题（（1）（2）（3））** | 仿宋\_GB2312 | 32 (16pt) |
+| **英文及数字** | Times New Roman | 与上下文一致 |
+
+## 行距（固定值）
+
+| 元素 | 磅值 | docx-js line |
+|------|------|-------------|
+| **标题行距** | 33–36磅 | 660–720 |
+| **全文行距** | 28磅 | 560 |
+
+## 页边距
+
+| 方向 | 尺寸 | DXA |
+|------|------|-----|
+| 上 | 3.7cm | 2098 |
+| 下 | 3.5cm | 1984 |
+| 左 | 2.8cm | 1587 |
+| 右 | 2.6cm | 1474 |
+
+## docx-js 代码模板
+
+```javascript
+const { Document, Packer, Paragraph, TextRun, AlignmentType } = require("docx");
+
+const FONT_TITLE = "方正小标宋简体";
+const FONT_BODY = "仿宋_GB2312";
+const FONT_H1 = "黑体";
+const FONT_H2 = "楷体_GB2312";
+const FONT_H34 = "仿宋_GB2312";
+const FONT_EN = "Times New Roman";
+
+function tr(text, opts = {}) {
+  return new TextRun({
+    text,
+    font: opts.font || FONT_BODY,
+    size: opts.size || 32,
+    bold: opts.bold || false,
+  });
+}
+
+function bodyP(text) {
+  return new Paragraph({
+    children: [tr(text)],
+    spacing: { line: 560, lineRule: "exact" },
+    indent: { firstLine: 512 }, // 首行缩进2字符
+  });
+}
+
+function h1(text) {
+  return new Paragraph({
+    children: [tr(text, { font: FONT_H1, bold: true })],
+    spacing: { line: 660, lineRule: "exact", before: 200 },
+  });
+}
+
+// 页面设置
+properties: {
+  page: {
+    margin: { top: 2098, bottom: 1984, left: 1587, right: 1474 },
+  },
+}
+```

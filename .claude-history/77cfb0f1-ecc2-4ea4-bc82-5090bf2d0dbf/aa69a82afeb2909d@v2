@@ -1,0 +1,27 @@
+import openpyxl
+import sys
+
+path = r"D:\工作\项目资料\码头堆棚改造\费用结算\码头堆棚施工领料明细(2026年4月1日更新).xlsx"
+wb = openpyxl.load_workbook(path, data_only=True)
+
+# Print all sheet names
+print("Sheets:", wb.sheetnames)
+
+# Read Sheet 1 - 成本汇总
+ws1 = wb[wb.sheetnames[0]]
+print(f"\n=== {wb.sheetnames[0]} === (rows={ws1.max_row})")
+for row in ws1.iter_rows(min_row=1, max_row=ws1.max_row, values_only=True):
+    vals = [str(v)[:50] if v is not None else "" for v in row]
+    non_empty = [v for v in vals if v]
+    if non_empty:
+        print(" | ".join(non_empty))
+
+# Read first 30 rows of Sheet 3 (领料明细)
+if len(wb.sheetnames) > 2:
+    ws3 = wb[wb.sheetnames[2]]
+    print(f"\n=== {wb.sheetnames[2]} === (第一页, rows={ws3.max_row})")
+    for i, row in enumerate(ws3.iter_rows(min_row=1, max_row=30, values_only=True), 1):
+        vals = [str(v)[:30] if v is not None else "" for v in row]
+        non_empty = [v for v in vals if v]
+        if non_empty:
+            print(f"  Row{i}: {' | '.join(non_empty)}")

@@ -1,0 +1,228 @@
+# -*- coding: utf-8 -*-
+"""
+???? - ??????
+??????????????????????????
+"""
+from datetime import datetime, date
+from typing import Dict, Optional, Tuple
+
+from backend.models import db, PerformanceAssessment, InventoryTarget
+from backend.models import EnergyConsumption, MaterialConsumption
+
+
+# ?????? (?????????)
+WEIGHTS = {
+    "diesel": 0.15,        # ?????? 15%
+    "fresh_water": 0.10,   # ?????? 10%
+    "lubricant": 0.10,     # ??????? 10%
+    "spare_parts": 0.20,   # ?????? 20%
+    "material": 0.15,      # ?????? 15%
+    "outsourcing": 0.15,   # ?????? 15%
+    "equipment": 0.15,     # ?????? 15%
+}
+
+# ????
+FULL_SCORES = {
+    "diesel": 100, "fresh_water": 100, "lubricant": 100,
+    "spare_parts": 100, "material": 100, "outsourcing": 100, "equipment": 100,
+}
+
+
+def calculate_score(completion_rate: float, target_rate: float = 0) -> float:
+    """???????????"""
+    # ??? >= 100% ???; ??? < 100% ?????
+    if completion_rate >= 1.0:
+        return 100.0
+    elif completion_rate <= 0:
+        return 0.0
+    else:
+        # ????: ??80%?80?, ??50%?50?
+        return round(completion_rate * 100, 1)
+
+
+def generate_opinion(total_score: float, details: Dict) -> str:
+    """??????????"""
+    opinions = []
+    if total_score >= 95:
+        opinions.append("??????????????")
+    elif total_score >= 85:
+        opinions.append("??????????????")
+    elif total_score >= 70:
+        opinions.append("??????????????????")
+    else:
+        opinions.append("????????????????????")
+
+    # ??????
+    weak_items = []
+    for key, label in [("diesel", "????"), ("fresh_water", "????"),
+                        ("lubricant", "?????"), ("spare_parts", "????"),
+                        ("material", "????")]:
+        score = details.get(f"{key}_score", 100)
+        if score < 80:
+            weak_items.append(label)
+    if weak_items:
+        opinions.append(f"????: {'?'.join(weak_items)}??????")
+
+    if details.get("outsourcing_count", 0) > 0:
+        opinions.append(f"???????? {details['outsourcing_count']} ?????????")
+
+    return "?".join(opinions) + "?"
+
+
+def run_assessment(year: int, month: int) -> Tuple[Optional[PerformanceAssessment], str]:
+    """????????????"""
+    try:
+        # 1. ????????
+        targets = _get_targets(year, month)
+
+        # 2. ?????????
+        diesel_rate = _calc_reduction_rate(year, month, "??")
+        water_rate = _calc_reduction_rate(year, month, "??")
+        lubricant_rate = _calc_reduction_rate(year, month, "???")
+        parts_rate = _calc_parts_reduction(year, month)
+        material_rate = _calc_material_reduction(year, month)
+
+        # 3. ?????
+        diesel_completion = diesel_rate / targets.get("diesel", 5) if targets.get("diesel", 5) else 1.0
+        water_completion = water_rate / targets.get("water", 5) if targets.get("water", 5) else 1.0
+        lubricant_completion = lubricant_rate / targets.get("lubricant", 5) if targets.get("lubricant", 5) else 1.0
+        parts_completion = parts_rate / targets.get("parts", 5) if targets.get("parts", 5) else 1.0
+        material_completion = material_rate / targets.get("material", 5) if targets.get("material", 5) else 1.0
+
+        # 4. ??????
+        diesel_score = calculate_score(abs(diesel_completion))
+        water_score = calculate_score(abs(water_completion))
+        lubricant_score = calculate_score(abs(lubricant_completion))
+        parts_score = calculate_score(abs(parts_completion))
+        material_score = calculate_score(abs(material_completion))
+
+        # 5. ????????? (??????????????)
+        outsourcing_count = 0
+        outsourcing_amount = 0.0
+        outsourcing_saved = 0.0
+        outsourcing_score = 100.0
+
+        equipment_score = 100.0
+
+        # 6. ???? (??)
+        details = {
+            "diesel_score": diesel_score, "fresh_water_score": water_score,
+            "lubricant_score": lubricant_score, "spare_parts_score": parts_score,
+            "material_score": material_score, "outsourcing_score": outsourcing_score,
+            "equipment_score": equipment_score,
+            "diesel_rate": diesel_rate, "water_rate": water_rate,
+            "lubricant_rate": lubricant_rate, "parts_rate": parts_rate,
+            "material_rate": material_rate,
+            "outsourcing_count": outsourcing_count,
+        }
+
+        total_score = round(
+            diesel_score * WEIGHTS["diesel"]
+            + water_score * WEIGHTS["fresh_water"]
+            + lubricant_score * WEIGHTS["lubricant"]
+            + parts_score * WEIGHTS["spare_parts"]
+            + material_score * WEIGHTS["material"]
+            + outsourcing_score * WEIGHTS["outsourcing"]
+            + equipment_score * WEIGHTS["equipment"],
+            1
+        )
+
+        # 7. ??????
+        opinion = generate_opinion(total_score, details)
+
+        # 8. ??????
+        assessment = PerformanceAssessment(
+            assessment_year=year,
+            assessment_month=month,
+            diesel_reduction_rate=diesel_rate,
+            diesel_score=diesel_score,
+            fresh_water_reduction_rate=water_rate,
+            fresh_water_score=water_score,
+            lubricant_reduction_rate=lubricant_rate,
+            lubricant_score=lubricant_score,
+            spare_parts_reduction_rate=parts_rate,
+            spare_parts_score=parts_score,
+            material_reduction_rate=material_rate,
+            material_score=material_score,
+            outsourcing_count=outsourcing_count,
+            outsourcing_amount=outsourcing_amount,
+            outsourcing_saved=outsourcing_saved,
+            outsourcing_score=outsourcing_score,
+            equipment_special_score=equipment_score,
+            total_score=total_score,
+            evaluation_opinion=opinion,
+            created_at=datetime.now(),
+        )
+        db.session.add(assessment)
+        db.session.commit()
+
+        return assessment, ""
+
+    except Exception as e:
+        db.session.rollback()
+        return None, str(e)
+
+
+def _get_targets(year: int, month: int) -> Dict:
+    """??????"""
+    targets = {}
+    # ? InventoryTarget ????
+    records = InventoryTarget.query.filter_by(year=year).all()
+    for r in records:
+        if "??" in r.category:
+            targets["diesel"] = r.reduction_rate or 5
+        elif "??" in r.category:
+            targets["water"] = r.reduction_rate or 5
+        elif "???" in r.category:
+            targets["lubricant"] = r.reduction_rate or 5
+        elif "??" in r.category:
+            targets["parts"] = r.reduction_rate or 10
+        elif "??" in r.category:
+            targets["material"] = r.reduction_rate or 5
+
+    # ????
+    targets.setdefault("diesel", 5)
+    targets.setdefault("water", 5)
+    targets.setdefault("lubricant", 5)
+    targets.setdefault("parts", 10)
+    targets.setdefault("material", 5)
+    return targets
+
+
+def _calc_reduction_rate(year: int, month: int, energy_type: str) -> float:
+    """??????????????????
+
+    ????: (???? - ?????) / ????? * 100
+
+    ?????????????????
+    """
+    if month > 1:
+        # ??: ????????
+        cur = db.session.query(db.func.sum(EnergyConsumption.consumption))            .filter(db.extract("YEAR", EnergyConsumption.date) == year)            .filter(db.extract("MONTH", EnergyConsumption.date) == month)            .filter(EnergyConsumption.energy_type == energy_type).scalar() or 0
+        prev = db.session.query(db.func.sum(EnergyConsumption.consumption))            .filter(db.extract("YEAR", EnergyConsumption.date) == year)            .filter(db.extract("MONTH", EnergyConsumption.date) == month - 1)            .filter(EnergyConsumption.energy_type == energy_type).scalar() or 0
+        if prev > 0:
+            return round((cur - prev) / prev * 100, 2)
+    return 0.0
+
+
+def _calc_parts_reduction(year: int, month: int) -> float:
+    """???????"""
+    cur = db.session.query(db.func.sum(MaterialConsumption.total_amount))        .filter(db.extract("YEAR", MaterialConsumption.date) == year)        .filter(db.extract("MONTH", MaterialConsumption.date) == month)        .scalar() or 0
+    prev = db.session.query(db.func.sum(MaterialConsumption.total_amount))        .filter(db.extract("YEAR", MaterialConsumption.date) == year)        .filter(db.extract("MONTH", MaterialConsumption.date) == month - 1)        .scalar() or 0
+    if prev > 0:
+        return round((cur - prev) / prev * 100, 2)
+    return 5.0  # ????
+
+
+def _calc_material_reduction(year: int, month: int) -> float:
+    """???????"""
+    return _calc_parts_reduction(year, month)
+
+
+def get_latest_assessment() -> Optional[Dict]:
+    """????????"""
+    record = PerformanceAssessment.query.order_by(
+        PerformanceAssessment.assessment_year.desc(),
+        PerformanceAssessment.assessment_month.desc()
+    ).first()
+    return record.to_dict() if record else None

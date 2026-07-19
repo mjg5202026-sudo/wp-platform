@@ -1,0 +1,23 @@
+# -*- coding: utf-8 -*-
+"""Read specific sheet: 26年单耗计算表 (1-5月) (剔除)"""
+import sys
+sys.path.insert(0, 'D:\\soft\\work-flow\\wp-platform')
+import openpyxl
+
+path = 'D:\\soft\\work-flow\\doc\\2026年绩效考核计算.xlsx'
+wb = openpyxl.load_workbook(path, data_only=True)
+
+# Read the target sheet
+ws = wb['26年单耗计算表 (1-5月) (剔除)']
+print(f"Sheet: 26年单耗计算表 (1-5月) (剔除) ({ws.max_row}行 x {ws.max_column}列)")
+
+# Print ALL rows to see full structure
+for r in range(1, ws.max_row + 1):
+    row = []
+    for c in range(1, min(ws.max_column + 1, 20)):
+        v = ws.cell(r, c).value
+        s = str(v)[:35] if v is not None else ""
+        row.append(s)
+    row_str = " | ".join(row)
+    if row_str.strip(" |"):
+        print(f"R{r}: {row_str}")

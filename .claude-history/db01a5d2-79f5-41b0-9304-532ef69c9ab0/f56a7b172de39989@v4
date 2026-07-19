@@ -1,0 +1,75 @@
+---
+name: wp-platform-project
+description: WP装备能源AI经营管理平台 — 项目目标、架构、已完成模块和开发优先级
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 32ab3245-5bf2-4ad8-9a3b-e19b53152212
+  lastUpdated: 2026-06-27
+---
+
+# WP装备能源AI经营管理平台
+
+## 项目定位
+为印尼金川WP公司装备能源部建设的AI秘书平台，目标自动完成：
+- 日常统计分析
+- 绩效考核
+- 提质增效管理
+- 专项检查管理
+- 月报生成
+- 领导汇报
+
+## 技术栈
+- 后端: Python 3.8 + Flask + SQLAlchemy + SQLite
+- 前端: React 19 + Vite 6 + Ant Design 5 + ECharts 5 + Axios
+- 数据: SQLite (data/db/wp_platform.db)
+- Excel: openpyxl + xlrd
+- PDF: pdfplumber
+- 报告: python-docx
+
+## 目录结构
+wp-platform/
+├── app.py                    # Flask入口
+├── backend/
+│   ├── __init__.py           # App工厂，注册7个蓝图
+│   ├── config.py             # 配置
+│   ├── models.py             # 9个数据模型
+│   ├── models_kpi.py         # KPI结果模型
+│   ├── routes/               # 7个路由模块
+│   ├── services/             # 业务逻辑层
+│   └── utils/                # 工具函数
+├── frontend/
+│   └── src/                  # React页面
+└── data/
+    ├── db/wp_platform.db     # 数据库
+    ├── uploads/              # 上传文件
+    └── reports/              # 生成的报告
+
+## 开发优先级
+经营分析 > 报表自动化 > 提质增效 > 设备管理
+
+## 开发约定
+- 主分支: HEAD（非git仓库）
+- 数据库: SQLite, data/db/wp_platform.db
+- 所有API返回JSON
+- MCP SQLite已配置: `.claude/settings.json` → sqlite-wp (`npx @lubo3395/mcp-sqlite-server --readonly`)
+- CLAUDE.md已创建: `D:\soft\work-flow\wp-platform\CLAUDE.md`
+- 项目Skill: `/wp-start` 启停服务 | `/wp-db` 数据库查询 | `/wp-frontend` 前端开发
+
+不做: ERP、MES、复杂设备台账
+
+## 完成的模块
+- 领导驾驶舱（Dashboard）
+- 数据中心（Excel/PDF上传导入）
+- 故障管理（统计/TOP10/趋势）
+- 能源管理（电/柴油/新水）
+- 专项检查（问题录入/整改跟踪）
+- 项目管理（Mock数据）
+- 绩效考核（焙砂电单耗KPI计算）
+- 报告中心（DOCX生成）
+
+## 待完成/需要优化的模块
+- 绩效考核：定额材料/柴油/辅材/备件/存货/设备设施/提质增效
+- AI报告审核
+- 项目管理对接真实API
+- **所有报告的格式和数据准确性需要大幅优化**

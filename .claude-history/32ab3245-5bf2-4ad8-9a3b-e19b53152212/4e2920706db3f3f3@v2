@@ -1,0 +1,21 @@
+# -*- coding: utf-8 -*-
+"""Read 附件4 - 能源管理和价格相关"""
+import sys
+sys.path.insert(0, 'D:\\soft\\work-flow\\wp-platform')
+import openpyxl
+
+path = 'D:\\soft\\work-flow\\wp-platform\\data\\templates\\附件4 - 2026年绩效管理专项考核细则 Lampiran 4 - Rincian Ketentuan Khusus Penilaian Kinerja.xlsx'
+wb = openpyxl.load_workbook(path, data_only=True)
+
+# Look for energy management and finance sheets
+for sn in wb.sheetnames:
+    if '能源' in sn or '财务' in sn or '预算' in sn or '设备' in sn or '价格' in sn:
+        ws = wb[sn]
+        print(f"\n=== {sn} ({ws.max_row}行 x {ws.max_column}列) ===")
+        for r in range(1, min(ws.max_row + 1, 80)):
+            row = []
+            for c in range(1, min(ws.max_column + 1, 12)):
+                v = ws.cell(r, c).value
+                row.append(str(v)[:50] if v is not None else "")
+            if any(cell for cell in row):
+                print(f"  R{r}: {' | '.join(row)}")

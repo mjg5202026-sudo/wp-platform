@@ -1,0 +1,32 @@
+# -*- coding: utf-8 -*-
+"""Find quota material unit prices in 业绩考核指标表"""
+import sys, os
+sys.path.insert(0, 'D:\\soft\\work-flow\\wp-platform')
+import openpyxl
+
+path = 'D:\\soft\\work-flow\\wp-platform\\data\\templates\\2026年绩效考核计算.xlsx'
+wb = openpyxl.load_workbook(path, data_only=True)
+
+# Read 2026年绩效管理业绩考核指标表 sheet
+sn = '2026年绩效管理业绩考核指标表'
+ws = wb[sn]
+print(f"=== {sn} ({ws.max_row}行 x {ws.max_column}列) ===")
+for r in range(1, min(ws.max_row + 1, 60)):
+    row = []
+    for c in range(1, min(ws.max_column + 1, 15)):
+        v = ws.cell(r, c).value
+        row.append(str(v)[:50] if v is not None else "")
+    if any(cell for cell in row):
+        print(f"  R{r}: {' | '.join(row)}")
+
+# Also check 定额材料 rows in 26年单耗计算表 (1-5月) (剔除) for unit price column
+print("\n\n=== Checking for price/cost columns in 26年单耗计算表 (1-5月) (剔除) ===")
+ws2 = wb['26年单耗计算表 (1-5月) (剔除)']
+# Check headers more broadly
+for r in range(1, min(ws2.max_row + 1, 15)):
+    row = []
+    for c in range(1, min(ws2.max_column + 1, 50)):
+        v = ws2.cell(r, c).value
+        row.append(str(v)[:20] if v is not None else "")
+    if any(cell for cell in row):
+        print(f"  R{r}: {' | '.join(row)}")

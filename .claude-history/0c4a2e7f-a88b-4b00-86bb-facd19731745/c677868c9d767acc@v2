@@ -1,0 +1,190 @@
+# -*- coding: utf-8 -*-
+"""生成双语版 - 读取终版文件，逐段添加印尼语翻译"""
+from docx import Document
+from docx.shared import Pt, Cm, Emu
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+from docx.text.paragraph import Paragraph
+from copy import deepcopy
+import os, re
+
+src = r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（终）.docx'
+out = r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（双语）.docx'
+
+doc = Document(src)
+
+# ----- 印尼语翻译映射 -----
+# 只翻译标题和分析文本，表格数据和数字不翻译
+translations = {
+    '装备能源部': 'Departemen Peralatan dan Energi',
+    '2026年上半年经营活动分析报告': 'Laporan Analisis Kegiatan Operasional Semester I Tahun 2026',
+    '2026年7月13日': '13 Juli 2026',
+
+    '前言': 'Pendahuluan',
+
+    '2026年上半年，装备能源部紧紧围绕公司年度经营目标，坚持"保运转、降成本、提效率"工作主线，认真落实公司降本增效、精益运维各项工作要求，扎实推进设备管理、能源保障、物资管理等重点工作，设备运行总体平稳，成本管控取得一定成效，修旧利废工作持续推进。':
+    'Pada Semester I Tahun 2026, Departemen Peralatan dan Energi berfokus pada target operasional tahunan perusahaan, menerapkan prinsip kerja "menjaga operasi, menurunkan biaya, meningkatkan efisiensi", melaksanakan berbagai persyaratan kerja perusahaan dalam menurunkan biaya dan meningkatkan efisiensi serta pemeliharaan ramping, mendorong pekerjaan utama seperti manajemen peralatan, jaminan energi, dan manajemen material. Operasi peralatan secara umum stabil, pengendalian biaya mencapai hasil tertentu, dan pekerjaan perbaikan dan pemanfaatan kembali terus berlanjut.',
+
+    '从主要经营指标完成情况来看，上半年综合故障率为6.75%，较上年同期下降1.75个百分点，设备运行稳定性进一步提升；计划维修占比达到30.3%，较上年同期提高11.8个百分点，计划维修工作取得一定进展。持续推进自主维修，全面取消非必要外委检修，实现阶段性外委检修费用清零。成本管控方面，柴油消耗同比节约27.59%，限额材料节支4.25%，修旧利废完成326.28万元，降本增效工作取得阶段性成效。':
+    'Dari pencapaian indikator operasional utama, tingkat kegagalan komprehensif semester I sebesar 6,75%, turun 1,75 poin persentase dibandingkan periode yang sama tahun lalu, stabilitas operasi peralatan semakin meningkat. Proporsi pemeliharaan terencana mencapai 30,3%, meningkat 11,8 poin persentase, kemajuan dalam pemeliharaan terencana telah tercapai. Terus mendorong pemeliharaan mandiri, menghapuskan seluruh pemeliharaan kontraktor yang tidak diperlukan, merealisasikan penghentian biaya pemeliharaan kontraktor secara bertahap. Dalam pengendalian biaya, konsumsi solar hemat 27,59%, material terbatas hemat 4,25%, perbaikan dan pemanfaatan kembali mencapai 3,2628 juta yuan, pekerjaan penurunan biaya dan peningkatan efisiensi mencapai hasil bertahap.',
+
+    '同时，也要看到部分经营指标与目标要求仍有差距。一是计划维修占比虽然有所提高，但整体水平仍然偏低，预防性维修工作还需进一步加强；二是备品备件费用超预算5.17%，成本管控压力依然存在；三是电极糊单耗超目标40.27%，需采取针对性措施；四是备件库存压降未完成阶段目标，库存结构仍需持续优化。':
+    'Namun demikian, masih terdapat kesenjangan antara beberapa indikator operasional dengan target. Pertama, meskipun proporsi pemeliharaan terencana meningkat, tingkat keseluruhan masih rendah, pekerjaan pemeliharaan preventif perlu diperkuat. Kedua, biaya suku cadang melampaui anggaran 5,17%, tekanan pengendalian biaya masih ada. Ketiga, konsumsi pasta elektroda melampaui target 40,27%, perlu tindakan khusus. Keempat, penurunan stok suku cadang belum mencapai target tahap, struktur inventaris仍需 terus dioptimalkan.',
+
+    '下半年，装备能源部将围绕年度经营目标，坚持问题导向，进一步加强设备基础管理，提高计划维修执行质量，持续推进自主维修和修旧利废，加强备件采购和库存管控，做好能源和材料消耗控制，努力提升设备运行保障能力和经营管理水平，确保全年各项经营目标顺利完成。':
+    'Pada Semester II, Departemen Peralatan dan Energi akan berfokus pada target operasional tahunan, berorientasi pada masalah, memperkuat manajemen dasar peralatan, meningkatkan kualitas pelaksanaan pemeliharaan terencana, terus mendorong pemeliharaan mandiri dan perbaikan & pemanfaatan kembali, memperkuat pengadaan suku cadang dan pengendalian inventaris, mengendalikan konsumsi energi dan material, meningkatkan kemampuan jaminan operasi peralatan dan tingkat manajemen operasional, memastikan seluruh target operasional tahunan tercapai dengan baik.',
+
+    '一、设备运行分析': 'I. Analisis Operasi Peralatan',
+    '（一）总体运行情况': '(A) Gambaran Umum Operasi',
+    '1.冶炼部': '1. Divisi Smelter',
+
+    '2026年上半年，冶炼部各系统设备运行整体优于去年同期，设备开动率与运行时间同比提升，非计划停机时间减少。各系统作业率均保持在较高水平，设备运行保障能力进一步增强。':
+    'Pada Semester I 2026, operasi peralatan berbagai sistem Divisi Smelter secara umum lebih baik dari periode yang sama tahun lalu, tingkat pengoperasian dan waktu operasi meningkat, waktu penghentian tidak terencana berkurang. Tingkat operasi berbagai sistem tetap pada level tinggi, kemampuan jaminan operasi peralatan semakin meningkat.',
+
+    '2.电厂部': '2. Divisi Power Plant',
+    '（二）电厂部': '(B) Divisi Power Plant',
+    '（二）冶炼部': '(B) Divisi Smelter',
+    '（三）设备可靠性分析': '(C) Analisis Keandalan Peralatan',
+    '（四）影响经营指标的主要因素': '(D) Faktor Utama yang Mempengaruhi Indikator Operasional',
+    '6.应对措施': '6. Tindakan Penanggulangan',
+
+    '二、能源消耗': 'II. Konsumsi Energi',
+    '（一）电厂部能源消耗': '(A) Konsumsi Energi Divisi Power Plant',
+    '1.综合分析': '1. Analisis Komprehensif',
+    '2.应对措施': '2. Tindakan Penanggulangan',
+    '（二）冶炼部能源消耗': '(B) Konsumsi Energi Divisi Smelter',
+
+    '三、物资管理': 'III. Manajemen Material',
+    '（一）备品备件': '(A) Suku Cadang',
+    '（二）定额材料': '(B) Material Kuota',
+    '综合分析': 'Analisis Komprehensif',
+    '应对措施': 'Tindakan Penanggulangan',
+    '（三）限额材料': '(C) Material Terbatas',
+    '（四）柴油': '(D) Solar',
+
+    '四、库存分析': 'IV. Analisis Inventaris',
+    '（一）库存总体情况': '(A) Gambaran Umum Inventaris',
+    '主要滞存原因': 'Penyebab Utama Penumpukan',
+    '具体压降措施': 'Langkah Penurunan Konkret',
+    '（二）库存压降未完成原因': '(B) Penyebab Penurunan Inventaris Belum Tercapai',
+    '（三）下一步措施': '(C) Langkah Selanjutnya',
+
+    '五、设备检修分析': 'V. Analisis Pemeliharaan Peralatan',
+    '（一）计划检修完成情况': '(A) Realisasi Pemeliharaan Terencana',
+    '（二）外委检修管控': '(B) Pengendalian Pemeliharaan Kontraktor',
+    '（三）下一步措施': '(C) Langkah Selanjutnya',
+
+    '六、修旧利废分析': 'VI. Analisis Perbaikan dan Pemanfaatan Kembali',
+    '下一步措施': 'Langkah Selanjutnya',
+
+    '七、经营存在问题': 'VII. Masalah Operasional',
+    '八、问题原因分析': 'VIII. Analisis Penyebab Masalah',
+    '九、下半年重点工作': 'IX. Fokus Pekerjaan Semester II',
+
+    '装备能源部': 'Departemen Peralatan dan Energi',
+    '2026年7月13日': '13 Juli 2026',
+}
+
+# ----- 段落级翻译（正文段落）-----
+para_translations = {
+    '2026年上半年，冶炼部各系统设备运行整体优于去年同期，设备开动率与运行时间同比提升，非计划停机时间减少。各系统作业率均保持在较高水平，设备运行保障能力进一步增强。':
+    'Pada Semester I 2026, operasi peralatan berbagai sistem Divisi Smelter secara umum lebih baik dari periode yang sama tahun lalu, tingkat pengoperasian dan waktu operasi meningkat, waktu penghentian tidak terencana berkurang. Tingkat operasi berbagai sistem tetap pada level tinggi, kemampuan jaminan operasi peralatan semakin meningkat.',
+
+    '2026年上半年，电厂部设备运行平稳，非计划停机次数较去年同期明显减少。上半年共发生1次非计划停机，为冶炼立磨抢修临时停炉3天，启动时发电机滑环底座受潮影响并网带负荷6小时，除此外未发生其他设备原因导致的非计划停机。':
+    'Pada Semester I 2026, operasi peralatan Divisi Power Plant berjalan stabil, jumlah penghentian tidak terencana berkurang signifikan. Hanya terjadi 1 kali penghentian tidak terencana, yaitu pemadaman sementara 3 hari karena perbaikan darurat vertical mill, dan 6 jam keterlambatan sinkronisasi akibat kelembaban pada dudukan slip ring generator.',
+}
+
+# ----- 处理段落 -----
+for i, p in enumerate(doc.paragraphs):
+    text = p.text.strip()
+    if not text:
+        continue
+    # 查找翻译
+    trans = translations.get(text) or para_translations.get(text)
+    if trans:
+        # 在段落p后面插入新段落
+        new_p = OxmlElement('w:p')
+        p._element.addnext(new_p)
+        new_para = Paragraph(new_p, p._element.getparent())
+        # 复制对齐
+        if p.alignment:
+            new_pPr = new_p.find(qn('w:pPr'))
+            if new_pPr is None:
+                new_pPr = OxmlElement('w:pPr')
+                new_p.insert(0, new_pPr)
+            jc = OxmlElement('w:jc')
+            jc.set(qn('w:val'), {WD_ALIGN_PARAGRAPH.CENTER:'center', WD_ALIGN_PARAGRAPH.JUSTIFY:'both'}.get(p.alignment, 'left'))
+            new_pPr.append(jc)
+        pf = p.paragraph_format
+        npf = new_para.paragraph_format
+        npf.first_line_indent = pf.first_line_indent
+        npf.space_before = pf.space_before
+        npf.space_after = pf.space_after
+        if pf.line_spacing:
+            npf.line_spacing = pf.line_spacing
+        r_elem = OxmlElement('w:r')
+        new_p.append(r_elem)
+        rPr = OxmlElement('w:rPr')
+        r_elem.append(rPr)
+        rFonts = OxmlElement('w:rFonts')
+        rFonts.set(qn('w:ascii'), 'Times New Roman')
+        rFonts.set(qn('w:hAnsi'), 'Times New Roman')
+        rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+        rPr.append(rFonts)
+        sz = OxmlElement('w:sz')
+        sz.set(qn('w:val'), '28')  # 14pt = 28 half-points
+        rPr.append(sz)
+        t = OxmlElement('w:t')
+        t.set(qn('xml:space'), 'preserve')
+        t.text = trans
+        r_elem.append(t)
+        print(f'  [OK] {text[:25]}...')
+
+# ----- 处理表格标题（表上方说明文字）-----
+table_captions = {
+    '表1 冶炼部设备运行时间（h）': 'Tabel 1 Waktu Operasi Peralatan Divisi Smelter (h)',
+    '表2 冶炼部设备可开动率': 'Tabel 2 Tingkat Kesiapan Operasi Peralatan Divisi Smelter',
+    '表3 冶炼部设备故障率': 'Tabel 3 Tingkat Kegagalan Peralatan Divisi Smelter',
+    '表4 冶炼部非计划停机时间（h）': 'Tabel 4 Waktu Penghentian Tidak Terencana Divisi Smelter (h)',
+    '表5 冶炼部各系统月度作业率': 'Tabel 5 Tingkat Operasi Bulanan Berbagai Sistem Divisi Smelter',
+    '表6 电厂部能源消耗': 'Tabel 6 Konsumsi Energi Divisi Power Plant',
+    '表7 电厂部成本情况（万美元）': 'Tabel 7 Biaya Divisi Power Plant (ribu USD)',
+    '表8 冶炼部能源消耗': 'Tabel 8 Konsumsi Energi Divisi Smelter',
+    '表9 备品备件消耗（万美元）': 'Tabel 9 Konsumsi Suku Cadang (ribu USD)',
+    '表10 定额材料万吨镍金属单耗': 'Tabel 10 Konsumsi Material Kuota per 10.000 ton Logam Nikel',
+    '表11 限额材料完成情况（万美元）': 'Tabel 11 Realisasi Material Terbatas (ribu USD)',
+    '表12 柴油消耗（万升）': 'Tabel 12 Konsumsi Solar (ribu liter)',
+    '表13 备品备件库存（6月，万美元）': 'Tabel 13 Inventaris Suku Cadang (Juni, ribu USD)',
+    '表14 限额材料库存（6月，万美元）': 'Tabel 14 Inventaris Material Terbatas (Juni, ribu USD)',
+}
+
+# ----- 处理表格（添加双语表头说明）-----
+for i, p in enumerate(doc.paragraphs):
+    text = p.text.strip()
+    if text in table_captions:
+        trans = table_captions[text]
+        new_p = OxmlElement('w:p')
+        p._element.addnext(new_p)
+        new_para = Paragraph(new_p, p._element.getparent())
+        new_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r_elem = OxmlElement('w:r')
+        new_p.append(r_elem)
+        rPr = OxmlElement('w:rPr')
+        r_elem.append(rPr)
+        rFonts = OxmlElement('w:rFonts')
+        rFonts.set(qn('w:ascii'), 'Times New Roman')
+        rFonts.set(qn('w:hAnsi'), 'Times New Roman')
+        rFonts.set(qn('w:eastAsia'), '仿宋_GB2312')
+        rPr.append(rFonts)
+        sz = OxmlElement('w:sz')
+        sz.set(qn('w:val'), '24')  # 12pt
+        rPr.append(sz)
+        t = OxmlElement('w:t')
+        t.set(qn('xml:space'), 'preserve')
+        t.text = trans
+        r_elem.append(t)
+
+# ----- 保存 -----
+doc.save(out)
+print(f'\nOke: {out}')

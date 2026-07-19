@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-Process *)"
+    ]
+  },
+  "mcpServers": {
+    "sqlite-wp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lubo3395/mcp-sqlite-server",
+        "--db", "D:\\soft\\work-flow\\wp-platform\\data\\db\\wp_platform.db",
+        "--readonly",
+        "--max-rows", "500"
+      ],
+      "description": "WP平台SQLite数据库 - 只读查询"
+    }
+  },
+  "project_skills": {
+    "plan-build": {
+      "description": "构建便利贴待办为exe安装包",
+      "prompt": "构建便利贴待办工具(StickyNotesTodo)为Windows可执行文件。\n\n路径: d:\\soft\\python\\vscode\\Daily_plan\n技术栈: Python + PySide6 + SQLite\n\n构建步骤:\n1. 检查 build.py 是否存在，如果不存在则创建一个标准 PyInstaller 构建脚本\n2. 运行 `python build.py`\n3. 确认 dist/ 目录下生成了可执行文件\n4. 如果构建失败，检查PySide6和PyInstaller是否安装\n\n注意事项:\n- 构建出来的exe需要支持开机自启动（注册表写入）\n- 需要支持高DPI显示\n- 图标使用默认或系统图标即可"
+    },
+    "plan-run": {
+      "description": "运行便利贴待办应用",
+      "prompt": "运行便利贴待办工具(StickyNotesTodo)进行调试。\n\n路径: d:\\soft\\python\\vscode\\Daily_plan\n\n运行方式:\n1. 确保依赖已安装: `pip install -r requirements.txt`\n2. 运行主程序: `python main.py`\n3. 如果PySide6报错，检查Qt平台插件是否完整\n\n注意: 运行后桌面右上角会出现便利贴窗口，程序会持续运行直到关闭。"
+    }
+  }
+}

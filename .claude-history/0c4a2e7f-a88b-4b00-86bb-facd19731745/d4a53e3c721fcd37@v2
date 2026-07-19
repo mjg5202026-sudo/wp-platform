@@ -1,0 +1,55 @@
+# -*- coding: utf-8 -*-
+"""诊断哪些段落未翻译"""
+from docx import Document
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+
+src = r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（终）.docx'
+doc = Document(src)
+
+# 先找出所有中文段落
+cn_paras = []
+for i, p in enumerate(doc.paragraphs):
+    text = p.text.strip()
+    if text and len(text) > 2:
+        cn_paras.append((i, text))
+
+# 生成双语版然后又检查后文中哪些没翻译
+# 打开双语版，看每个中文段落后面是不是有翻译段落
+doc2 = Document(r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（双语）.docx')
+
+# 统计翻译对
+cn_count = 0
+trans_count = 0
+for p in doc2.paragraphs:
+    text = p.text.strip()
+    if text and len(text) > 5:
+        first_char = text[0]
+        if '一' <= first_char <= '鿿' or first_char in '（「【':
+            cn_count += 1
+        elif 'a' <= first_char.lower() <= 'z' or first_char in 'ABCD':
+            # Check if Indonesian
+            if any(word in text.lower() for word in ['semester', 'divisi', 'tingkat', 'dan', 'yang', 'untuk', 'dengan']):
+                trans_count += 1
+
+print(f'中文段落数: {cn_count}')
+print(f'印尼语翻译数: {trans_count}')
+print(f'翻译覆盖率: {trans_count/max(cn_count,1)*100:.0f}%')
+
+# 列出所有中文段落，检查哪些没有翻译
+print('\n=== 可能缺少翻译的中文段落 ===')
+for i in range(len(doc2.paragraphs)):
+    p = doc2.paragraphs[i]
+    text = p.text.strip()
+    if not text or len(text) < 5:
+        continue
+    first_char = text[0]
+    if '一' <= first_char <= '鿿' or first_char in '（「【':
+        # Check if next paragraph is Indonesian
+        has_trans = False
+        if i + 1 < len(doc2.paragraphs):
+            next_text = doc2.paragraphs[i+1].text.strip()
+            if next_text and any(word in next_text.lower() for word in ['semester', 'divisi', 'tingkat', 'dan', 'yang']):
+                has_trans = True
+        if not has_trans:
+            print(f'  P{i}: {text[:60]}...')

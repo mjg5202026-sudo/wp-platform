@@ -1,0 +1,50 @@
+﻿import axios from 'axios'
+
+const api = axios.create({
+  baseURL: '/api',
+  timeout: 30000,
+})
+
+export const getImpactFactors = (params) => api.get('/data/impact-factors', { params })
+export const uploadFile = (formData) => api.post('/data/upload', formData)
+export const previewFile = (formData) => api.post('/data/preview', formData)
+export const importFile = (data) => api.post('/data/import', data)
+export const getFaults = (params) => api.get('/faults/list', { params })
+export const getFaultSummary = () => api.get('/faults/summary')
+export const getFaultTop10 = (params) => api.get('/faults/top10', { params })
+export const getFaultBySystem = () => api.get('/faults/by-system')
+export const getFaultTrend = (params) => api.get('/faults/daily-trend', { params })
+export const getEnergyList = (params) => api.get('/energy/list', { params })
+export const getInspections = (params) => api.get('/inspections/list', { params })
+export const getProjects = (params) => api.get('/projects/list', { params })
+export const getAssessments = (params) => api.get('/assessments/list', { params })
+
+export default api
+
+export const getEnergySummary = () => api.get('/energy/summary')
+export const getEnergyTrend = (params) => api.get('/energy/monthly-trend', { params })
+export const addEnergyRecord = (data) => api.post('/energy/add', data)
+export const deleteEnergyRecord = (id) => api.delete(`/energy/delete/${id}`)
+
+export const addInspectionIssue = (data) => api.post('/inspections/add', data)
+export const updateInspection = (id, data) => api.put(`/inspections/update/${id}`, data)
+export const deleteInspection = (id) => api.delete(`/inspections/delete/${id}`)
+export const getInspectionStats = () => api.get('/inspections/statistics')
+
+// 绩效考核KPI计算
+export const calcCalcinePower = (data) => api.post('/assessments/kpi/calc-calcine-power', data)
+export const saveKpiResult = (data) => api.post('/assessments/kpi/save', data)
+export const getKpiResults = (params) => api.get('/assessments/kpi/list', { params })
+export const deleteKpiResult = (id) => api.delete(`/assessments/kpi/delete/${id}`)
+export const calcQuotaMaterial = (data) => api.post('/assessments/kpi/calc-quota-material', data)
+export const calcDiesel = (data) => api.post('/assessments/kpi/calc-diesel', data)
+export const calcBudgetPermille = (data) => api.post('/assessments/kpi/calc-budget-permille', data)
+export const calcManualItems = (data) => api.post('/assessments/kpi/calc-manual-items', data)
+
+// 报告中心
+export const getReportTypes = () => api.get('/reports/types')
+export const getReportList = () => api.get('/reports/list')
+export const generateReport = (data) => api.post('/reports/generate', data)
+export const downloadReport = (data) => api.post('/reports/download', data, { responseType: 'blob' })
+export const deleteReport = (data) => api.post('/reports/delete', data)
+

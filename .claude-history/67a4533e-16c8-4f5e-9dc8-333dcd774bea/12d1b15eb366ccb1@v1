@@ -1,0 +1,173 @@
+import React, { useState, useEffect } from 'react'
+import { Card, Upload, Button, message, Table, Tag, Modal, Tabs, Statistic, Row, Col, Descriptions } from 'antd'
+import { UploadOutlined, InboxOutlined } from '@ant-design/icons'
+import { uploadFile, getImpactFactors } from '../api'
+
+const { Dragger } = Upload
+
+const DataCenter = () => {
+  // Upload state
+  const [uploading, setUploading] = useState(false)
+  const [resultModal, setResultModal] = useState({ open: false, result: null })
+
+  // Impact factors table
+  const [impactData, setImpactData] = useState([])
+  const [impactTotal, setImpactTotal] = useState(0)
+  const [impactPage, setImpactPage] = useState(1)
+
+  // Upload history
+  const [uploadHistory, setUploadHistory] = useState([
+    { key: '1', file: '????????? 2026.xls', time: '2026-06-15 10:17', table: 'operation_impact_factors', rows: 1746, status: 'ok' },
+  ])
+
+  const loadImpactData = () => {
+    getImpactFactors({ page: impactPage, per_page: 100 }).then(res => {
+      setImpactData(res.data.data)
+      setImpactTotal(res.data.total)
+    })
+  }
+
+  useEffect(() => { loadImpactData() }, [impactPage])
+
+  const handleUpload = async (file) => {
+    setUploading(true)
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      const res = await uploadFile(formData)
+      setResultModal({ open: true, result: res.data })
+      if (res.data.status !== 'error') {
+        message.success(`????: ${res.data.detail?.success || 0} ?`)
+        loadImpactData()
+        setUploadHistory(prev => [{
+          key: Date.now().toString(),
+          file: file.name,
+          time: new Date().toLocaleString(),
+          table: res.data.detail?.table || '-',
+          rows: res.data.detail?.success || 0,
+          status: res.data.status,
+        }, ...prev])
+      }
+    } catch (e) {
+      message.error('????: ' + (e.response?.data?.message || e.message))
+    }
+    setUploading(false)
+    return false
+  }
+
+  const impactColumns = [
+    { title: '??', dataIndex: 'date', width: 90 },
+    { title: '??', dataIndex: 'shift', width: 90 },
+    { title: '??', dataIndex: 'team', width: 50 },
+    { title: '??', dataIndex: 'system', width: 70 },
+    { title: '????', dataIndex: 'impact_factor', ellipsis: true },
+    { title: '????', dataIndex: 'impact_minutes', width: 80, render: v => (
+      <Tag color={v > 480 ? 'red' : v > 120 ? 'orange' : v > 60 ? 'blue' : 'default'}>{v}?</Tag>
+    )},
+    { title: '??', dataIndex: 'impact_type', width: 60 },
+  ]
+
+  const historyColumns = [
+    { title: '???', dataIndex: 'file', ellipsis: true },
+    { title: '????', dataIndex: 'time', width: 160 },
+    { title: '???', dataIndex: 'table', width: 180 },
+    { title: '????', dataIndex: 'rows', width: 80 },
+    { title: '??', dataIndex: 'status', width: 80, render: v => <Tag color={v === 'ok' ? 'green' : 'red'}>{v === 'ok' ? '??' : '??'}</Tag> },
+  ]
+
+  const tabItems = [
+    {
+      key: 'upload',
+      label: '????',
+      children: (
+        <>
+          <Dragger
+            name="file" multiple={false} accept=".xlsx,.xls,.csv"
+            beforeUpload={handleUpload} showUploadList={false} disabled={uploading}
+          >
+            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+            <p className="ant-upload-text">?????Excel????????</p>
+            <p className="ant-upload-hint">
+              ?? .xlsx .xls .csv ????????????<br/>
+              ??????? ??????? / ???? / ???? ?????
+            </p>
+          </Dragger>
+          <Card title="????" size="small" style={{ marginTop: 16 }}>
+            <Table dataSource={uploadHistory} columns={historyColumns} rowKey="key" size="small" pagination={false} />
+          </Card>
+        </>
+      ),
+    },
+    {
+      key: 'impact',
+      label: '???????',
+      children: (
+        <Table
+          dataSource={impactData} columns={impactColumns} rowKey="id" size="small"
+          pagination={{ current: impactPage, total: impactTotal, pageSize: 100, onChange: p => setImpactPage(p) }}
+          scroll={{ x: 700 }}
+        />
+      ),
+    },
+    {
+      key: 'help',
+      label: '????',
+      children: (
+        <Card>
+          <Descriptions column={1} bordered size="small">
+            <Descriptions.Item label="???????">???????????????????????????????????????? 2026.xls</Descriptions.Item>
+            <Descriptions.Item label="????">?????????????????Excel??? ??/??/??/?? ??????</Descriptions.Item>
+            <Descriptions.Item label="????">???????????????????????? ???/??/?? ???</Descriptions.Item>
+            <Descriptions.Item label="?????">.xlsx (Excel 2007+) / .xls (Excel 97-2003) / .csv</Descriptions.Item>
+          </Descriptions>
+        </Card>
+      ),
+    },
+  ]
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <h2>????</h2>
+        <p>Excel??????????</p>
+      </div>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col span={6}><Card size="small"><Statistic title="???????" value={impactTotal} suffix="?" /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="????" value={0} suffix="?" /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="????" value={0} suffix="?" /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="????" value={uploadHistory.length} suffix="?" /></Card></Col>
+      </Row>
+
+      <Card>
+        <Tabs items={tabItems} />
+      </Card>
+
+      <Modal
+        title="????"
+        open={resultModal.open}
+        onCancel={() => setResultModal({ open: false, result: null })}
+        footer={<Button onClick={() => setResultModal({ open: false, result: null })}>??</Button>}
+      >
+        {resultModal.result && (
+          <div>
+            <p>??: <Tag color={resultModal.result.status === 'ok' ? 'green' : 'orange'}>{resultModal.result.status}</Tag></p>
+            <p>????: <strong>{resultModal.result.detail?.success || 0}</strong></p>
+            {resultModal.result.detail?.errors?.length > 0 && (
+              <>
+                <p>???: {resultModal.result.detail.errors.length}</p>
+                <div style={{ maxHeight: 200, overflow: 'auto', fontSize: 12, color: '#999' }}>
+                  {resultModal.result.detail.errors.map((e, i) => (
+                    <p key={i}>? {e.row}: {e.message}</p>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
+export default DataCenter

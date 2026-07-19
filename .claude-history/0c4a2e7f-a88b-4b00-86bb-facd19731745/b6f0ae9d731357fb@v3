@@ -1,0 +1,149 @@
+# -*- coding: utf-8 -*-
+import xlrd, sys, io
+from collections import defaultdict
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+wb = xlrd.open_workbook(r'D:\soft\work-flow\wp-platform\data\templates\影响作业率因素统计 2026(4).xls')
+sh = wb.sheet_by_index(0)
+datemode = wb.datemode
+
+def hex_id(s):
+    return s.encode('utf-8').hex()
+
+REASON_SHENGCHAN = 'e7949fe4baa7e7bb84e7bb87'
+REASON_JIHUA = 'e8aea1e58892e680a7e6a380e4bfae'
+REASON_BAOZHANG_PREFIX = 'e4bf9de99a9c'
+
+def should_exclude_reason(reason_str):
+    h = hex_id(reason_str)
+    if h == REASON_SHENGCHAN or h == REASON_JIHUA:
+        return True
+    if REASON_BAOZHANG_PREFIX in h:
+        return True
+    if 'e8bda6e8be86' in h:
+        return True
+    return False
+
+def get_line_num(line_str):
+    """Extract line number (1,2,3,4) from line string hex"""
+    h = hex_id(line_str)
+    if h.startswith('31'): return 1
+    if h.startswith('32'): return 2
+    if h.startswith('33'): return 3
+    if h.startswith('34'): return 4
+    return 0
+
+# ===== Collect June records =====
+june_records = []
+for r in range(1, sh.nrows):
+    v = sh.cell_value(r, 0)
+    if isinstance(v, (int, float)) and v > 40000:
+        t = xlrd.xldate_as_tuple(v, datemode)
+        if t[1] == 6 and t[0] == 2026:
+            date_day = t[2]
+            line = str(sh.cell_value(r, 3)).strip()
+            reason = str(sh.cell_value(r, 9)).strip()
+            factor = str(sh.cell_value(r, 4)).strip()
+            mins = sh.cell_value(r, 7)
+            shift = str(sh.cell_value(r, 1)).strip()  # 班次
+            if isinstance(mins, (int, float)) and mins > 0:
+                line_num = get_line_num(line)
+                if line_num >= 1 and line_num <= 3:  # Only running lines
+                    if not should_exclude_reason(reason):
+                        june_records.append({
+                            'date_day': date_day,
+                            'line_num': line_num,
+                            'line': line,
+                            'factor': factor,
+                            'shift': shift,
+                            'minutes': mins
+                        })
+
+print("===== 方法一（正确）：生产线级别 =====")
+print("逻辑：每个事故，按(日期, 线号, 影响因素)分组，取该组最长的单台设备停机")
+print("因为 干燥窑→回窑→电炉 是串联的，同事故的三台设备停机时间重叠\n")
+
+# Group by (date_day, line_num, factor) and take max
+group_max = defaultdict(float)
+group_details = defaultdict(list)
+for rec in june_records:
+    key = (rec['date_day'], rec['line_num'], rec['factor'])
+    if rec['minutes'] > group_max[key]:
+        group_max[key] = rec['minutes']
+    group_details[key].append(rec)
+
+# Sum per line
+line_downtime_correct = {1: 0.0, 2: 0.0, 3: 0.0}
+total_downtime_correct = 0.0
+
+for (day, line_num, factor), max_mins in sorted(group_max.items()):
+    line_downtime_correct[line_num] += max_mins
+    total_downtime_correct += max_mins
+
+DAYS = 29
+HOURS_PER_LINE = DAYS * 24  # 696 hours per line
+
+print(f"期间: 6月1日 - 6月29日 (29天)")
+print(f"运行: 3条独立生产线\n")
+
+for ln in [1, 2, 3]:
+    rate = line_downtime_correct[ln] / (HOURS_PER_LINE * 60) * 100
+    print(f"  {ln}#线: 停机 {line_downtime_correct[ln]:.0f} min ({line_downtime_correct[ln]/60:.1f} h)  故障率 {rate:.2f}%")
+
+print()
+avg_rate_correct = total_downtime_correct / (HOURS_PER_LINE * 60 * 3) * 100
+print(f"  三条线总停机: {total_downtime_correct:.0f} min ({total_downtime_correct/60:.1f} h)")
+print(f"  总可用线时: {DAYS * 24 * 3:.0f} 线·小时 (3条线 × 29天 × 24h)")
+print(f"  ★ 生产线平均故障率: {avg_rate_correct:.2f}%")
+print()
+
+# ===== Top 10 factors (corrected) =====
+factor_total = defaultdict(float)
+for (day, line_num, factor), max_mins in group_max.items():
+    factor_total[factor] += max_mins
+
+ranked = sorted(factor_total.items(), key=lambda x: -x[1])
+
+print("影响时间最长的10项因素（去重叠后）:")
+print("-" * 100)
+print("  %3s %-55s %10s %10s %8s" % ('#', '影响因素', '停机(分钟)', '停机(小时)', '占比'))
+print("-" * 100)
+for i, (factor, mins) in enumerate(ranked[:10], 1):
+    hours = mins / 60
+    pct = mins / total_downtime_correct * 100
+    disp = factor if len(factor) <= 50 else factor[:47] + '...'
+    print("  %3d %-55s %10.0f %10.1f %7.1f%%" % (i, disp, mins, hours, pct))
+
+print("-" * 100)
+top10_total = sum(m for _, m in ranked[:10])
+print("  %58s %10.0f %10.1f %7.1f%%" % ('Top 10 合计', top10_total, top10_total/60, top10_total/total_downtime_correct*100))
+print()
+
+# ===== Also show per-line top factors =====
+print()
+print("=== 各生产线Top 5影响因素 ===")
+for ln in [1, 2, 3]:
+    line_factors = defaultdict(float)
+    for (day, line_num, factor), max_mins in group_max.items():
+        if line_num == ln:
+            line_factors[factor] += max_mins
+    ranked_line = sorted(line_factors.items(), key=lambda x: -x[1])
+    print(f"\n{ln}#线 (总停机 {line_downtime_correct[ln]:.0f} min):")
+    for i, (factor, mins) in enumerate(ranked_line[:5], 1):
+        print(f"  {i}. {factor[:50]} - {mins:.0f} min ({mins/60:.1f} h)")
+
+print()
+print("=" * 70)
+print("对比两种算法:")
+print("=" * 70)
+print("  方法A（之前的错误算法）: 简单求和9台设备停机 = 40,485 min")
+print("  方法A 总可用: 9 × 29 × 24h = 375,840 min")
+print("  方法A 故障率: 10.77%")
+print()
+print("  方法B（按生产线去重叠）: 事件级取MAX = %.0f min" % total_downtime_correct)
+print("  方法B 总可用: 3 × 29 × 24h = %.0f min (线·小时)" % (HOURS_PER_LINE * 60))
+print("  方法B 故障率: %.2f%%" % avg_rate_correct)
+print()
+print("  差异原因: 原算法把同一事件在干燥窑、回窑、电炉上的记录重复求和了")
+print("  实际一条线停一次机 = 数据里可能有三行记录")

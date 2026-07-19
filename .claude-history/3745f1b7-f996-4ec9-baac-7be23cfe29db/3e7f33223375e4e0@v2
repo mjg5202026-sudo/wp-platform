@@ -1,0 +1,226 @@
+const fs = require("fs");
+const { Document, Packer, Paragraph, TextRun, Header, Footer,
+        Table, TableRow, TableCell,
+        AlignmentType, BorderStyle, WidthType, ShadingType, PageNumber } = require("docx");
+
+const OUT = "D:\\工作\\装备能源\\固定资产\\废铁销售\\废铁销售评审会议纪要（双语版）.docx";
+
+// ===== 公文格式常量 =====
+const FONT_TITLE = "方正小标宋简体";
+const FONT_BODY = "仿宋_GB2312";
+const FONT_H1 = "黑体";
+const FONT_H2 = "楷体_GB2312";
+const FONT_EN = "Times New Roman";
+const FONT_PAGE = "宋体";
+
+const SZ_TITLE = 44;
+const SZ_BODY = 32;
+const SZ_PAGE = 28;
+
+const LINE_BODY = 560;
+const LINE_TITLE = 660;
+const INDENT_2 = 640;
+const MARGINS = { top: 2098, bottom: 1984, left: 1587, right: 1474 };
+
+// ===== 工具函数 =====
+function tr(text, opts = {}) {
+  return new TextRun({
+    text,
+    font: opts.font || FONT_BODY,
+    size: opts.size || SZ_BODY,
+    bold: opts.bold || false,
+  });
+}
+
+function p(children, opts = {}) {
+  return new Paragraph({
+    children: Array.isArray(children) ? children : [tr(children)],
+    alignment: opts.alignment,
+    spacing: { line: LINE_BODY, lineRule: "exact", ...(opts.spacing || {}) },
+    indent: opts.indent,
+    ...(opts.keepNext ? { keepNext: true } : {}),
+  });
+}
+
+function empty(lines = 1) {
+  const arr = [];
+  for (let i = 0; i < lines; i++) arr.push(p([tr("", { size: 10 })]));
+  return arr;
+}
+
+function titleP(text) {
+  return p([tr(text, { font: FONT_TITLE, size: SZ_TITLE })], {
+    alignment: AlignmentType.CENTER,
+    spacing: { line: LINE_TITLE, lineRule: "exact", before: 200, after: 200 },
+  });
+}
+
+function h1(text) {
+  return p([tr(text, { font: FONT_H1, size: SZ_BODY, bold: true })], {
+    spacing: { line: LINE_BODY, lineRule: "exact", before: 200 },
+    keepNext: true,
+  });
+}
+
+function bodyLine(text) {
+  return p([tr(text)], { indent: { firstLine: INDENT_2 } });
+}
+
+function biBody(zh, id) {
+  return p([tr(zh)], { indent: { firstLine: INDENT_2 }, spacing: { line: LINE_BODY, lineRule: "exact", after: 20 } });
+}
+
+function biBody2(zh, id) {
+  return p([tr(zh, { font: FONT_EN })], { indent: { firstLine: INDENT_2 }, spacing: { line: LINE_BODY, lineRule: "exact" } });
+}
+
+// ===== 表1: 报价汇总 =====
+const border = { style: BorderStyle.SINGLE, size: 1, color: "000000" };
+const borders = { top: border, bottom: border, left: border, right: border };
+const cm = { top: 40, bottom: 40, left: 80, right: 80 };
+
+function tCellP(text, opts = {}) {
+  return new TableCell({
+    borders, width: opts.width ? { size: opts.width, type: WidthType.DXA } : undefined,
+    shading: opts.shading ? { fill: opts.shading, type: ShadingType.CLEAR } : undefined,
+    margins: cm, verticalAlign: "center",
+    children: [new Paragraph({
+      children: [tr(text, { bold: opts.bold, size: opts.size || 24 })],
+      alignment: opts.alignment || AlignmentType.CENTER,
+      spacing: { after: 0, line: 400, lineRule: "exact" },
+    })],
+  });
+}
+
+const c1 = [600, 2600, 1800, 2000, 2400];
+const t1w = c1.reduce((a, b) => a + b, 0);
+const t1h = new TableRow({ children: [
+  tCellP("序号", { width: c1[0], bold: true, shading: "D5E8F0" }),
+  tCellP("报价单位", { width: c1[1], bold: true, shading: "D5E8F0" }),
+  tCellP("报价（Rp/吨）", { width: c1[2], bold: true, shading: "D5E8F0" }),
+  tCellP("资质情况", { width: c1[3], bold: true, shading: "D5E8F0" }),
+  tCellP("备注", { width: c1[4], bold: true, shading: "D5E8F0" }),
+]});
+const t1d = [
+  ["1", "PT Menembus Batas", "Rp1.700.000", "Lengkap（齐全）", "含增值税，海运自理"],
+  ["2", "PT Kafila Lintas Benua", "Rp1.550.000", "Lengkap（齐全）", "含增值税，有合作历史"],
+  ["3", "CV Besi Makmur", "Rp1.500.000", "Belum Lengkap（不完整）", "含增值税，海运自理"],
+];
+const t1r = t1d.map(r => new TableRow({ children: r.map((v, i) => tCellP(v, { width: c1[i], alignment: i === 1 || i === 3 || i === 4 ? AlignmentType.LEFT : AlignmentType.CENTER })) }));
+const table1 = new Table({ width: { size: t1w, type: WidthType.DXA }, columnWidths: c1, rows: [t1h, ...t1r] });
+
+// ===== 构建文档 =====
+const children = [
+  ...empty(2),
+  titleP("废铁销售询价评审会议纪要"),
+  ...empty(2),
+
+  // ===== 会议基本信息 =====
+  h1("一、会议基本信息"),
+  biBody("会议时间：2026年7月4日"),
+  biBody2("Waktu Rapat: 4 Juli 2026"),
+  biBody("会议地点：印尼金川WP公司会议室"),
+  biBody2("Tempat Rapat: Ruang Rapat PT. WP Indonesia Jinchuan"),
+  biBody("主持人：_______________"),
+  biBody2("Pemimpin Rapat: _______________"),
+  biBody("参会人员：_______________"),
+  biBody2("Peserta Rapat: _______________"),
+  biBody("记录人：_______________"),
+  biBody2("Notulen: _______________"),
+  ...empty(),
+
+  // ===== 会议议程 =====
+  h1("二、会议议程"),
+  biBody("本次会议主要对废铁销售询价项目进行评审，讨论确定中标单位。"),
+  biBody2("Rapat ini bertujuan untuk mengevaluasi proyek penjualan besi tua dan menentukan pemenang penawaran."),
+  ...empty(),
+
+  // ===== 报价情况汇报 =====
+  h1("三、报价情况汇报"),
+  biBody("截至报价截止时间，共收到3家单位提交的报价文件，报价汇总如下："),
+  biBody2("Hingga batas akhir penawaran, terdapat 3 perusahaan yang menyerahkan dokumen penawaran, sebagaimana tabel berikut:"),
+  ...empty(),
+  p([tr("Tabel Perbandingan Penawaran / 报价情况对比表")], { alignment: AlignmentType.CENTER, spacing: { line: LINE_BODY, lineRule: "exact", before: 60, after: 60 } }),
+  table1,
+  ...empty(),
+
+  biBody("1. PT Menembus Batas：报价Rp1.700.000/吨，资质齐全，含增值税，海运自理。"),
+  biBody2("1. PT Menembus Batas: Harga Rp1.700.000/ton, kualifikasi lengkap, termasuk PPN, transportasi laut ditanggung sendiri."),
+  biBody("2. PT Kafila Lintas Benua：报价Rp1.550.000/吨，资质齐全，含增值税，2024年曾与WP公司有成功合作历史。"),
+  biBody2("2. PT Kafila Lintas Benua: Harga Rp1.550.000/ton, kualifikasi lengkap, termasuk PPN, memiliki riwayat kerja sama dengan WP pada tahun 2024."),
+  biBody("3. CV Besi Makmur：报价Rp1.500.000/吨，资质尚不完整，含增值税。"),
+  biBody2("3. CV Besi Makmur: Harga Rp1.500.000/ton, kualifikasi belum lengkap, termasuk PPN."),
+  ...empty(),
+
+  // ===== 评审讨论 =====
+  h1("四、评审讨论"),
+  biBody("评审小组对3家报价单位的相关资料进行了审阅和讨论，主要情况如下："),
+  biBody2("Tim evaluasi telah meninjau dan mendiskusikan dokumen ketiga perusahaan penawar:"),
+  ...empty(),
+  biBody("1. PT Menembus Batas报价最高（Rp1.700.000/吨），资质齐全，且愿意自行承担海运费用，对WP公司最为有利。"),
+  biBody2("1. PT Menembus Batas memberikan harga tertinggi (Rp1.700.000/ton), kualifikasi lengkap, dan bersedia menanggung biaya transportasi laut sendiri. Paling menguntungkan bagi WP."),
+  ...empty(),
+  biBody("2. PT Kafila Lintas Benua报价（Rp1.550.000/吨）居中，资质齐全，且与WP公司有过成功的合作经验，信誉良好。"),
+  biBody2("2. PT Kafila Lintas Benua memberikan harga menengah (Rp1.550.000/ton), kualifikasi lengkap, dan memiliki pengalaman kerja sama yang baik dengan WP."),
+  ...empty(),
+  biBody("3. CV Besi Makmur报价最低（Rp1.500.000/吨），但资质材料尚不完整，暂不具备签约条件。"),
+  biBody2("3. CV Besi Makmur memberikan harga terendah (Rp1.500.000/ton), namun dokumen kualifikasi belum lengkap, sehingga belum memenuhi syarat untuk kontrak."),
+  ...empty(),
+  biBody("经充分讨论，评审小组一致认为：PT Menembus Batas和PT Kafila Lintas Benua均具备完整的经营资质，报价条件清晰，均符合询价文件要求。"),
+  biBody2("Setelah diskusi mendalam, tim evaluasi sepakat bahwa PT Menembus Batas dan PT Kafila Lintas Benua keduanya memiliki kualifikasi lengkap, ketentuan harga jelas, dan memenuhi persyaratan dokumen penawaran."),
+  ...empty(),
+
+  // ===== 评审决议 =====
+  h1("五、评审决议"),
+  ...empty(),
+  p([tr("经评审小组全体成员一致表决，形成决议如下：")], { indent: { firstLine: INDENT_2 }, spacing: { line: LINE_BODY, lineRule: "exact", after: 40 } }),
+  p([tr("Setelah pemungutan suara seluruh anggota tim evaluasi, diambil keputusan sebagai berikut:")], { indent: { firstLine: INDENT_2 }, spacing: { line: LINE_BODY, lineRule: "exact" } }),
+  ...empty(),
+
+  p([tr("在PT Menembus Batas和PT Kafila Lintas Benua均满足询价文件要求的前提下，一致同意在相同条件下与报价最高的PT Menembus Batas（Rp1.700.000/吨）签订废铁销售合同。"), tr("", { size: 10 }), tr("")], {
+    indent: { firstLine: INDENT_2 },
+    spacing: { line: LINE_BODY, lineRule: "exact", before: 60, after: 40 },
+  }),
+  p([tr("Dengan ketentuan bahwa PT Menembus Batas dan PT Kafila Lintas Benua sama-sama memenuhi persyaratan dokumen penawaran, dengan ini diputuskan secara bulat untuk menandatangani kontrak penjualan besi tua dengan perusahaan yang memberikan harga tertinggi yaitu PT Menembus Batas (Rp1.700.000/ton) dalam kondisi yang sama.")], {
+    indent: { firstLine: INDENT_2 },
+    spacing: { line: LINE_BODY, lineRule: "exact" },
+  }),
+  ...empty(),
+
+  p([tr("如PT Menembus Batas因故无法签约，则与报价次高的PT Kafila Lintas Benua（Rp1.550.000/吨）签订合同。")], { indent: { firstLine: INDENT_2 }, spacing: { line: LINE_BODY, lineRule: "exact", after: 40 } }),
+  p([tr("Apabila PT Menembus Batas tidak dapat menandatangani kontrak, maka kontrak akan ditandatangani dengan PT Kafila Lintas Benua (Rp1.550.000/ton) sebagai kandidat kedua.")], { indent: { firstLine: INDENT_2 }, spacing: { line: LINE_BODY, lineRule: "exact" } }),
+  ...empty(),
+
+  p([tr("合同期限建议为6个月或1年，具体条款以双方正式签订的销售合同为准。")], { indent: { firstLine: INDENT_2 }, spacing: { line: LINE_BODY, lineRule: "exact", after: 40 } }),
+  p([tr("Jangka waktu kontrak disarankan 6 bulan atau 1 tahun, dengan ketentuan sebagaimana tercantum dalam kontrak resmi.")], { indent: { firstLine: INDENT_2 }, spacing: { line: LINE_BODY, lineRule: "exact" } }),
+  ...empty(2),
+
+  // ===== 签字栏 =====
+  p([tr("评审小组组长（签字）：")], { spacing: { line: LINE_BODY, lineRule: "exact" } }),
+  p([tr("Ketua Tim Evaluasi (ttd):")], { spacing: { line: LINE_BODY, lineRule: "exact" } }),
+  ...empty(2),
+  p([tr("评审小组成员（签字）：")], { spacing: { line: LINE_BODY, lineRule: "exact" } }),
+  p([tr("Anggota Tim Evaluasi (ttd):")], { spacing: { line: LINE_BODY, lineRule: "exact" } }),
+  ...empty(2),
+  p([tr("2026年7月4日")], { alignment: AlignmentType.RIGHT, spacing: { line: LINE_BODY, lineRule: "exact" } }),
+  p([tr("4 Juli 2026")], { alignment: AlignmentType.RIGHT, spacing: { line: LINE_BODY, lineRule: "exact" } }),
+];
+
+const doc = new Document({
+  styles: { default: { document: { run: { font: FONT_BODY, size: SZ_BODY } } } },
+  sections: [{
+    properties: { page: { margin: MARGINS, size: { width: 11906, height: 16838 } } },
+    headers: {
+      default: new Header({ children: [new Paragraph({ children: [new TextRun({ text: "印尼金川WP公司 — 废铁销售询价评审会议纪要", font: FONT_BODY, size: 24, color: "888888" })], alignment: AlignmentType.CENTER, spacing: { after: 0 } })] }),
+    },
+    footers: {
+      default: new Footer({ children: [new Paragraph({ children: [new TextRun({ text: "- ", font: FONT_PAGE, size: SZ_PAGE }), new TextRun({ children: [PageNumber.CURRENT], font: FONT_PAGE, size: SZ_PAGE }), new TextRun({ text: " -", font: FONT_PAGE, size: SZ_PAGE })], alignment: AlignmentType.CENTER, spacing: { after: 0 } })] }),
+    },
+    children,
+  }],
+});
+
+Packer.toBuffer(doc).then(buffer => {
+  fs.writeFileSync(OUT, buffer);
+  console.log("SUCCESS: " + OUT + " (" + buffer.length + " bytes)");
+});

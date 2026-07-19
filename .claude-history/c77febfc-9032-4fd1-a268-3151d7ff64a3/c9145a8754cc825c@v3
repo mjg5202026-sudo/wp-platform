@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-Process *)"
+    ]
+  },
+  "mcpServers": {
+    "sqlite-wp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lubo3395/mcp-sqlite-server",
+        "--db", "D:\\soft\\work-flow\\wp-platform\\data\\db\\wp_platform.db",
+        "--readonly",
+        "--max-rows", "500"
+      ],
+      "description": "WP平台SQLite数据库 - 只读查询"
+    }
+  }
+}

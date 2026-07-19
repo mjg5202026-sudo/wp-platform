@@ -1,0 +1,216 @@
+# -*- coding: utf-8 -*-
+"""
+Excel ???? - ?? xlsx (openpyxl) ? xls (xlrd)
+"""
+import os
+import re
+from datetime import datetime, date, timedelta
+from typing import List, Dict, Optional, Tuple, Any
+
+import openpyxl
+from openpyxl.utils import get_column_letter
+
+
+def load_workbook(file_path: str):
+    """?? Excel ?????????"""
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".xlsx":
+        return openpyxl.load_workbook(file_path, data_only=True)
+    elif ext == ".xls":
+        import xlrd
+        return xlrd.open_workbook(file_path)
+    else:
+        raise ValueError(f"????????: {ext}")
+
+
+# ============================================================
+# ????? (?? -> ??)
+# ============================================================
+COLUMN_MAPPING = {
+    # ???????
+    "??": "date",
+    "??": "date",
+    "??": "shift",
+    "??": "team",
+    "??": "system",
+    "????": "impact_factor",
+    "????": "start_time",
+    "????": "start_time",
+    "????": "end_time",
+    "????": "impact_minutes",
+    "????": "impact_minutes",
+    "????": "impact_minutes",
+    "????": "impact_type",
+    "????": "cause_analysis",
+    "????": "cause_analysis",
+    # ????
+    "??": "category",
+    "??": "item_name",
+    "????": "item_name",
+    "??": "specification",
+    "??": "quantity",
+    "??": "unit",
+    "??": "unit_price",
+    "???": "total_amount",
+    "??": "total_amount",
+    "??": "warehouse",
+    "??": "department",
+    "??": "remark",
+    # ??
+    "????": "energy_type",
+    "???": "consumption",
+    "???": "total_cost",
+    "??": "total_cost",
+    "???": "generation_amount",
+    "??": "consumption_per_unit",
+    # ??
+    "????": "project_name",
+    "????": "project_type",
+    "???": "total_investment",
+    "?????": "completed_investment",
+    "???": "completion_rate",
+    "????": "start_date",
+    "????": "planned_end_date",
+    "????": "actual_end_date",
+    "????": "progress_description",
+    "????": "existing_issues",
+    "????": "next_week_plan",
+    "??": "status",
+    # ????
+    "????": "inspection_date",
+    "????": "inspection_type",
+    "????": "issue_description",
+    "??": "location",
+    "????": "severity",
+    "????": "rectification_measure",
+    "???": "responsible_person",
+    "????": "deadline",
+    "????": "rectification_status",
+    "????": "completion_date",
+    "????": "is_closed",
+    # ????
+    "??": "year",
+    "??": "month",
+    "????": "target_amount",
+    "????": "actual_amount",
+    "???": "reduction_rate",
+}
+
+
+def detect_header_row(ws, max_check: int = 10) -> Optional[int]:
+    """????????"""
+    for r in range(1, min(max_check + 1, ws.max_row + 1)):
+        row_vals = []
+        for c in range(1, min(ws.max_column + 1, 20)):
+            v = ws.cell(r, c).value
+            if v is not None:
+                row_vals.append(str(v).strip())
+        # ????????????
+        matched = sum(1 for v in row_vals if any(
+            key in v for key in COLUMN_MAPPING.keys()
+        ))
+        if matched >= 3:  # ????3??????????
+            return r
+    return None
+
+
+def parse_header_row(ws, header_row: int) -> List[str]:
+    """???????????? (??)"""
+    headers = []
+    for c in range(1, ws.max_column + 1):
+        v = ws.cell(header_row, c).value
+        raw = str(v).strip() if v is not None else ""
+        # ????
+        raw = raw.replace("\n", "").replace("\r", "").strip()
+        # ???????
+        mapped = None
+        for key, val in COLUMN_MAPPING.items():
+            if key in raw:
+                mapped = val
+                break
+        headers.append(mapped or raw)
+    return headers
+
+
+def parse_date_value(value, date_mode=0):
+    """? Excel ??? Python date ??"""
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, (int, float)):
+        try:
+            base = datetime(1899, 12, 30)
+            d = base + timedelta(days=int(value))
+            return d.date()
+        except:
+            return date.today()
+    s = str(value).strip()
+    for fmt in ["%Y.%m.%d", "%Y-%m-%d", "%Y/%m/%d", "%Y?%m?%d?"]:
+        try:
+            return datetime.strptime(s, fmt).date()
+        except:
+            continue
+    return date.today()
+
+
+def parse_datetime_value(value) -> Optional[str]:
+    """? Excel ??? ISO ?????"""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(value, date):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, (int, float)):
+        try:
+            base = datetime(1899, 12, 30)
+            dt_val = base + timedelta(days=float(value))
+            return dt_val.strftime("%Y-%m-%d %H:%M:%S")
+        except:
+            return str(value)
+    return str(value).strip()
+
+
+def convert_time_serial_to_hours(value) -> float:
+    """? Excel ??????????"""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return round(float(value), 2)
+    return 0.0
+
+
+def extract_data_rows(ws, header_row: int) -> Tuple[List[str], List[List[Any]]]:
+    """????????"""
+    headers = parse_header_row(ws, header_row)
+    data = []
+    for r in range(header_row + 1, ws.max_row + 1):
+        row = []
+        is_empty = True
+        for c in range(1, len(headers) + 1):
+            v = ws.cell(r, c).value
+            if v is not None:
+                is_empty = False
+            row.append(v)
+        if not is_empty:
+            data.append(row)
+    return headers, data
+
+
+def get_test_data() -> List[Dict]:
+    """?????? (????? Excel ?????)"""
+    return [
+        {"date": "2026-01-01", "shift": "19:00-7:00", "team": "2?",
+         "system": "1#??", "impact_factor": "????",
+         "start_time": "2026-01-01 01:20:00", "end_time": "2026-01-01 04:00:00",
+         "impact_minutes": 160, "impact_type": "??",
+         "cause_analysis": "????"},
+        {"date": "2026-01-01", "shift": "19:00-7:00", "team": "2?",
+         "system": "2#??", "impact_factor": "??????",
+         "start_time": "2026-01-01 19:00:00", "end_time": "2026-01-01 19:45:00",
+         "impact_minutes": 45, "impact_type": "??",
+         "cause_analysis": "????"},
+    ]

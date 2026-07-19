@@ -1,0 +1,33 @@
+import React from 'react'
+import { Card, Table, Tag, Progress, Space, Empty } from 'antd'
+
+const mockProjects = [
+  { key: '1', name: '4#????', type: '???????', investment: 1200, completed: 720, rate: 60, status: '???', start: '2026-01', end: '2026-12', remark: '????????' },
+  { key: '2', name: '4#?????', type: '???????', investment: 450, completed: 380, rate: 84, status: '???', start: '2026-02', end: '2026-09', remark: '??????' },
+  { key: '3', name: '4#????', type: '???????', investment: 350, completed: 280, rate: 80, status: '???', start: '2026-02', end: '2026-08', remark: '????' },
+  { key: '4', name: '??????', type: '????', investment: 180, completed: 60, rate: 33, status: '???', start: '2026-04', end: '2026-10', remark: '????' },
+  { key: '5', name: '???????', type: '????', investment: 90, completed: 90, rate: 100, status: '???', start: '2026-03', end: '2026-05', remark: '???' },
+]
+
+const statusColors = { '???': 'blue', '???': 'green', '??': 'red', '???': 'default' }
+
+const columns = [
+  { title: '????', dataIndex: 'name', width: 180 },
+  { title: '????', dataIndex: 'type', width: 140, render: v => <Tag>{v}</Tag> },
+  { title: '???(??)', dataIndex: 'investment', width: 100 },
+  { title: '???(??)', dataIndex: 'completed', width: 100 },
+  { title: '???', dataIndex: 'rate', width: 150, render: v => <Progress percent={v} size="small" /> },
+  { title: '??', dataIndex: 'status', width: 80, render: v => <Tag color={statusColors[v]}>{v}</Tag> },
+  { title: '????', dataIndex: 'start', width: 120, render: (_, r) => `${r.start} ~ ${r.end}` },
+  { title: '??', dataIndex: 'remark', ellipsis: true },
+]
+
+const Projects = () => (
+  <div className="page-container">
+    <div className="page-header"><h2>????</h2><p>????????????????</p></div>
+    <Card title="????" extra={<Space>???: <strong>2,270</strong> ?? | ?????: <strong>67%</strong></Space>}>
+      <Table dataSource={mockProjects} columns={columns} rowKey="key" size="small" pagination={false} />
+    </Card>
+  </div>
+)
+export default Projects

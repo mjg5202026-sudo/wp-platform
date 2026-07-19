@@ -1,0 +1,269 @@
+# -*- coding: utf-8 -*-
+"""
+故障率分析引擎 - 计算引擎
+
+核心算法实现：
+1. 按(日期, 线号, 因素) 分组去重叠
+2. 分类判断：立磨公辅 / 计划检修归入立磨 / 突发故障留产线自身
+3. 按线汇总并计算故障率
+4. 聚合Top N因素（按线别展开）
+"""
+
+from datetime import date
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional, Tuple
+from collections import defaultdict
+
+
+# ============================================================
+# 数据结构
+# ============================================================
+
+@dataclass
+class LineDetail:
+    """单条线对某个因素的贡献详情"""
+    line: int
+    equipment: str
+    minutes: float
+
+
+@dataclass
+class FactorBreakdown:
+    """单个影响因素的完整展开"""
+    factor: str
+    total_minutes: float
+    total_pct: float          # 占总停机百分比
+    category: str             # "公辅-立磨" / "公辅(含检修)" / "产线自身"
+    line_details: List[LineDetail] = field(default_factory=list)
+
+
+@dataclass
+class LineResult:
+    """单条生产线的分析结果"""
+    line: int
+    own_minutes: float
+    limo_minutes: float
+    total_minutes: float
+    own_rate: float           # 自身故障率（%）
+    comprehensive_rate: float # 综合故障率（%）
+
+
+@dataclass
+class AnalysisResult:
+    """完整分析结果"""
+    period_label: str               # "2026年6月"
+    start_date: date
+    end_date: date
+    days: int                       # 实际计算天数
+    running_line_count: int         # 运行产线数（默认3）
+    total_line_hours: float         # 总可用线时
+
+    # 按线统计
+    line_results: Dict[int, LineResult] = field(default_factory=dict)
+
+    # 汇总
+    total_own_minutes: float = 0
+    total_limo_minutes: float = 0
+    total_all_minutes: float = 0
+    avg_own_rate: float = 0        # 产线自身平均故障率（%）
+    avg_comprehensive_rate: float = 0  # 综合平均故障率（%）
+
+    # Top 因素（带线别展开，默认前10）
+    top_factors: List[FactorBreakdown] = field(default_factory=list)
+
+
+# ============================================================
+# 计算引擎
+# ============================================================
+
+class AnalysisEngine:
+    """核心计算引擎"""
+
+    def __init__(self, classifier=None):
+        if classifier:
+            self.cls = classifier
+        else:
+            from .classifier import Classifier
+            self.cls = Classifier()
+
+    def calculate(self, records: list, days: int,
+                  running_lines: Optional[List[int]] = None,
+                  top_n: int = 10) -> AnalysisResult:
+        """
+        执行故障率分析
+
+        参数:
+            records: List[DowntimeRecord] - 原始停机记录
+            days: int - 计算天数
+            running_lines: List[int] - 运行产线号，默认 [1,2,3]
+            top_n: int - 返回Top N因素，默认10
+
+        返回:
+            AnalysisResult
+        """
+        if running_lines is None:
+            from .config import RUNNING_LINES
+            running_lines = RUNNING_LINES
+
+        line_count = len(running_lines)
+
+        # 1. 按(日期, 线号, 因素描述) 分组
+        from .loader import DowntimeRecord
+        groups = defaultdict(list)
+        for rec in records:
+            key = (rec.date.day, rec.line_num, rec.factor)
+            groups[key].append(rec)
+
+        # 2. 找出每个线有立磨事件的日期
+        limo_days_by_line: Dict[int, set] = defaultdict(set)
+        for rec in records:
+            if self.cls.is_public_utility(rec.factor):
+                limo_days_by_line[rec.line_num].add(rec.date.day)
+
+        # 3. 逐组分批，分类计算
+        # 按(线号, 因素)累积停机
+        line_own: Dict[int, float] = {ln: 0.0 for ln in running_lines}
+        line_limo: Dict[int, float] = {ln: 0.0 for ln in running_lines}
+        # 记录每个因素的详细分类信息
+        # 结构: {factor: {'total': float, 'category': str, 'line_mins': {(ln, equip): float}}}
+        factor_info: Dict[str, dict] = {}
+
+        for (day, ln, factor), recs in groups.items():
+            # 跳过不在运行产线列表的记录
+            if ln not in running_lines:
+                continue
+
+            has_limo = any(self.cls.is_public_utility(r.factor) for r in recs)
+
+            # 获取该组中所有设备的类型
+            equipments = set(r.equipment for r in recs)
+
+            if has_limo:
+                # 立磨事件 → 取电炉侧 MAX
+                dianlu_mins = [r.minutes for r in recs if r.equipment == "电炉"]
+                val = max(dianlu_mins) if dianlu_mins else 0
+                if val > 0:
+                    line_limo[ln] += val
+                    self._accum_factor(factor_info, factor, val, ln,
+                                       "电炉" if dianlu_mins else list(equipments)[0],
+                                       "公辅-立磨")
+            else:
+                # 判断是否在立磨日
+                on_limo_day = day in limo_days_by_line.get(ln, set())
+                if on_limo_day:
+                    val = max(r.minutes for r in recs)
+                    if self.cls.is_sudden_fault(factor):
+                        line_own[ln] += val
+                        self._accum_factor(factor_info, factor, val, ln,
+                                           "/".join(sorted(equipments)), "产线自身")
+                    elif self.cls.is_planned_repair(factor):
+                        line_limo[ln] += val
+                        self._accum_factor(factor_info, factor, val, ln,
+                                           "/".join(sorted(equipments)), "公辅(含检修)")
+                    else:
+                        line_own[ln] += val
+                        self._accum_factor(factor_info, factor, val, ln,
+                                           "/".join(sorted(equipments)), "产线自身")
+                else:
+                    val = max(r.minutes for r in recs)
+                    line_own[ln] += val
+                    self._accum_factor(factor_info, factor, val, ln,
+                                       "/".join(sorted(equipments)), "产线自身")
+
+        # 4. 计算结果
+        total_own = sum(line_own.values())
+        total_limo = sum(line_limo.values())
+        total_all = total_own + total_limo
+
+        hrs_per_line = days * 24  # 默认24h/天
+        total_line_hours = hrs_per_line * line_count
+        total_line_minutes = total_line_hours * 60
+
+        line_results = {}
+        for ln in running_lines:
+            own = line_own[ln]
+            limo = line_limo[ln]
+            total_ln = own + limo
+            line_results[ln] = LineResult(
+                line=ln,
+                own_minutes=own,
+                limo_minutes=limo,
+                total_minutes=total_ln,
+                own_rate=(own / (hrs_per_line * 60) * 100) if hrs_per_line > 0 else 0,
+                comprehensive_rate=(total_ln / (hrs_per_line * 60) * 100) if hrs_per_line > 0 else 0,
+            )
+
+        avg_own_rate = total_own / total_line_minutes * 100 if total_line_minutes > 0 else 0
+        avg_comprehensive_rate = total_all / total_line_minutes * 100 if total_line_minutes > 0 else 0
+
+        # 5. 聚合 Top N 因素
+        factor_list = []
+        for factor, info in factor_info.items():
+            # 按(线号, 设备)展开为 LineDetail 列表
+            details = []
+            for (ln, equip), mins in sorted(info['line_mins'].items()):
+                details.append(LineDetail(line=ln, equipment=equip, minutes=mins))
+
+            fb = FactorBreakdown(
+                factor=factor,
+                total_minutes=info['total'],
+                total_pct=info['total'] / total_all * 100 if total_all > 0 else 0,
+                category=info['category'],
+                line_details=details,
+            )
+            factor_list.append(fb)
+
+        factor_list.sort(key=lambda x: -x.total_minutes)
+        top_factors = factor_list[:top_n]
+
+        # 生成计算时段标签（使用首条和末条记录的日期，如没有则用参数）
+        if records:
+            start = min(r.date for r in records)
+            end = max(r.date for r in records)
+            period_label = f"{start.year}年{start.month}月"
+            if start.month != end.month:
+                period_label = f"{start.year}.{start.month}-{end.month}"
+        else:
+            period_label = f"{days}天"
+            start = date(2026, 1, 1)
+            end = date(2026, 1, 1)
+
+        return AnalysisResult(
+            period_label=period_label,
+            start_date=start,
+            end_date=end,
+            days=days,
+            running_line_count=line_count,
+            total_line_hours=total_line_hours,
+            line_results=line_results,
+            total_own_minutes=total_own,
+            total_limo_minutes=total_limo,
+            total_all_minutes=total_all,
+            avg_own_rate=avg_own_rate,
+            avg_comprehensive_rate=avg_comprehensive_rate,
+            top_factors=top_factors,
+        )
+
+    def _accum_factor(self, factor_info: dict, factor: str,
+                      val: float, ln: int, equipment: str,
+                      category: str):
+        """累积因素停机时间，按(线号, 设备)合并"""
+        if factor not in factor_info:
+            factor_info[factor] = {
+                'total': 0.0,
+                'category': category,
+                'line_mins': {},  # {(ln, equip): minutes}
+            }
+        info = factor_info[factor]
+        info['total'] += val
+        key = (ln, equipment)
+        info['line_mins'][key] = info['line_mins'].get(key, 0) + val
+
+
+def calculate(records: list, days: int,
+              running_lines: Optional[List[int]] = None,
+              top_n: int = 10,
+              classifier=None) -> AnalysisResult:
+    """快捷入口"""
+    engine = AnalysisEngine(classifier=classifier)
+    return engine.calculate(records, days, running_lines, top_n)

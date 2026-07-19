@@ -1,0 +1,13 @@
+# -*- coding: utf-8 -*-
+"""提取所有待翻译段落文本"""
+from docx import Document
+
+src = r'D:\工作\装备能源\经营分析\2026年\装备能源部2026年上半年经营活动分析（终）.docx'
+doc = Document(src)
+
+with open(r'C:\Users\dell\.claude\projects\d--soft-python-vscode-Daily-plan\all_paragraphs.txt', 'w', encoding='utf-8') as f:
+    for i, p in enumerate(doc.paragraphs):
+        text = p.text.strip()
+        if text and len(text) > 3 and not text.startswith('表'):
+            f.write(f'P{i:03d}|{text}\n')
+            print(f'P{i:03d}: {text[:60]}')

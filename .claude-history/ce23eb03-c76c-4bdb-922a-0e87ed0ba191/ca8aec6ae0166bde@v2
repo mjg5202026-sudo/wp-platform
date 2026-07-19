@@ -1,0 +1,239 @@
+const fs = require("fs");
+const { Document, Packer, Paragraph, TextRun, Header, Footer,
+        AlignmentType, HeadingLevel, BorderStyle, WidthType,
+        PageNumber, PageBreak } = require("docx");
+
+const OUT = "D:\\工作\\装备能源\\固定资产\\废铁销售\\印尼金川WP公司废铁销售询价文件.docx";
+
+const FONT = "宋体";
+const TITLE_FONT = "Arial";
+const SECTION_FONT = "Arial";
+
+function textRun(text, opts = {}) {
+  return new TextRun({
+    text,
+    font: opts.font || FONT,
+    size: opts.size || 21,
+    bold: opts.bold || false,
+    ...(opts.color ? { color: opts.color } : {}),
+  });
+}
+
+function para(texts, opts = {}) {
+  const children = Array.isArray(texts) ? texts : [textRun(texts)];
+  return new Paragraph({
+    children,
+    alignment: opts.alignment,
+    spacing: opts.spacing,
+    indent: opts.indent,
+    ...(opts.keepNext ? { keepNext: true } : {}),
+  });
+}
+
+function heading(text, level = 1) {
+  return new Paragraph({
+    children: [textRun(text, { font: SECTION_FONT, size: 24, bold: true })],
+    spacing: { before: 200, after: 100 },
+    keepNext: true,
+  });
+}
+
+function bodyLine(text, indent = true) {
+  return new Paragraph({
+    children: [textRun(text)],
+    indent: indent ? { firstLine: 420 } : undefined,
+    spacing: { after: 40 },
+  });
+}
+
+function emptyLine() {
+  return new Paragraph({ children: [textRun("")], spacing: { after: 40 } });
+}
+
+function centerLine(text, opts = {}) {
+  return new Paragraph({
+    children: [textRun(text, opts)],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 40 },
+  });
+}
+
+function rightLine(text) {
+  return new Paragraph({
+    children: [textRun(text)],
+    alignment: AlignmentType.RIGHT,
+    spacing: { after: 40 },
+  });
+}
+
+const children = [
+  // Title
+  emptyLine(),
+  centerLine("废铁销售询价文件", { font: TITLE_FONT, size: 44, bold: true }),
+  emptyLine(),
+
+  // 致
+  para("致：", { font: SECTION_FONT, size: 24, bold: true }),
+  para("印尼金川建设有限公司", { font: SECTION_FONT, size: 24, bold: true }),
+  emptyLine(),
+
+  // 引言
+  bodyLine("根据印尼金川WP公司年度废旧物资管理工作计划及废铁销售需求，我司拟组织实施印尼金川WP公司废铁销售项目。现本着公平、公正、择优的原则，诚邀贵单位参与本项目废铁销售询价工作，望贵单位凭借专业的经营资质、成熟的采购经验及完善的服务体系积极响应。现将本项目相关信息、销售要求及报价事宜明确如下："),
+  emptyLine(),
+
+  // 一、项目概况
+  heading("一、项目概况"),
+  bodyLine("1.项目名称：印尼金川WP公司废铁销售项目。"),
+  bodyLine("2.项目地点：印度尼西亚北马鲁古省南哈马黑拉县奥比岛。"),
+  bodyLine("3.销售规模：主要包括冶炼厂改造及日常检修产生的废钢、废旧钢结构、报废设备拆解废钢等，具体销售内容以《销售清单》为准。"),
+  emptyLine(),
+
+  // 二、销售范围及内容
+  heading("二、销售范围及内容"),
+  bodyLine("1.销售范围：印尼金川WP公司废铁（包括冶炼厂改造后的废钢、废旧铁结构及公司报废钢材）。"),
+  bodyLine("2.销售数量：以实际过磅计量为准，详见本邀请函《销售清单》。"),
+  bodyLine("3.提货期限：具体提货开始日期以我公司书面通知为准，贵公司需根据通知及时安排运输车辆及人员，确保按期完成提货。"),
+  bodyLine("4.运输方式：废铁集中至WP公司指定区域，由WP公司负责场内装车及陆路运输至码头，海运由购买方负责，运输费用及相关风险由购买方承担。"),
+  emptyLine(),
+
+  // 三、资格要求
+  heading("三、资格要求"),
+  bodyLine("1.本次询价要求报价人具备：须具有独立法人资格的废铁回收、销售或相关经营资质的单位。"),
+  bodyLine("2.资质要求：须具备行政主管部门核发的有效营业执照（经营范围涵盖废旧物资回收或金属材料销售等相关内容）。"),
+  bodyLine("3.财务要求：具有良好的银行资信和商业信誉，需要提供近三年的财务报表或资信证明。"),
+  bodyLine("4.业绩要求：近3年具有废铁回收或金属材料采购相关业绩（2023年1月1日~2025年12月31日，以合同签订时间为准）。"),
+  bodyLine("5.信誉要求：2023年1月1日~2025年12月31日（近3年）没有与骗取合同有关的犯罪或严重违法行为而引起的诉讼和仲裁；申请人在最近三年内不曾在任何合同中违约或被逐或因任何原因而使任何合同被解除。"),
+  bodyLine("6.税务要求：具有依法纳税记录，能够开具合规的增值税发票。"),
+  bodyLine("7.其他要求：购买方应充分考虑印尼当地法律法规要求，具备在印尼合法经营及运输的相关手续和能力。"),
+  emptyLine(),
+
+  // 四、评审办法
+  heading("四、评审办法"),
+  bodyLine("1.本次询价先进行资格符合性审查，资格审查合格后方可进入详细评审。"),
+  bodyLine("2.详细评审采用最高价法：在满足资格条件的前提下，报价最高者中标。"),
+  bodyLine("3.如出现最高报价相同的情况，由评审小组根据报价人的业绩、信誉、运输方案等因素综合评定确定中标单位。"),
+  emptyLine(),
+
+  // 五、销售清单
+  heading("五、销售清单"),
+  bodyLine("（一）销售范围说明："),
+  bodyLine("本次废铁销售主要包括以下类别："),
+  bodyLine("1.冶炼厂设备改造拆除产生的废钢；"),
+  bodyLine("2.废旧钢结构及建筑废钢；"),
+  bodyLine("3.报废设备拆解形成的废钢材料；"),
+  bodyLine("4.日常检修产生的废旧钢材。"),
+  bodyLine("（二）计量方式：以印尼金川WP公司地磅实际过磅重量为准。"),
+  bodyLine("（三）提货方式：购买方自提。废铁由WP公司负责集中堆放至指定区域，购买方负责装车、运输及清场。"),
+  emptyLine(),
+
+  // 六、报价要求
+  heading("六、报价要求"),
+  bodyLine("1.报价方式：按每吨单价报价（印尼盾/吨），报价应为含税价（含增值税）。"),
+  bodyLine("2.报价货币：印度尼西亚盾（Rp）。"),
+  bodyLine("3.报价应包含废铁回收、装卸、运输、税费及利润等全部费用。WP公司仅负责陆运至码头，海运及相关费用由购买方承担。"),
+  bodyLine("4.报价人在报价时应充分考虑印尼当地市场行情、运输成本、汇率波动等因素，合理报价。"),
+  bodyLine("5.本次报价为最终报价，不接受二次报价调整。"),
+  emptyLine(),
+
+  // 七、合同主要条款
+  heading("七、合同主要条款"),
+  bodyLine("1.合同期限：建议合同期限为6个月或1年，根据合作情况续签。"),
+  bodyLine("2.付款方式：购买方需先支付预付款，最终货款按实际过磅重量结算，并须在船舶离开WP公司码头前完成全部付款。"),
+  bodyLine("3.履约保证金：合同价款的2%，以银行保函形式提交。"),
+  bodyLine("4.违约责任：如购买方未按期完成提货或未按时付款，WP公司有权扣除履约保证金并解除合同。"),
+  bodyLine("5.废铁销售应具备完整的管理文件，包括交接记录、出库单、运输单据、发票等相关资料。"),
+  emptyLine(),
+
+  // 八、报价文件格式
+  heading("八、报价文件格式"),
+  centerLine("（项目名称）"),
+  centerLine("报价文件", { size: 28, bold: true }),
+  emptyLine(),
+  bodyLine("报价单位：                              （盖单位章）", false),
+  bodyLine("法定代表人或其委托代理人：                （签字）", false),
+  centerLine("         年          月          日"),
+  emptyLine(),
+
+  // (一) 报价函
+  heading("（一）报价函"),
+  emptyLine(),
+  bodyLine("（询价人名称）：", false),
+  bodyLine("1.我方已仔细研究了印尼金川WP公司废铁销售询价文件的全部内容，愿意以每吨印尼盾（Rp_________）的报价参与本次废铁销售，提货期限_________日历天。"),
+  bodyLine("2.我方承诺严格按合同约定实施和完成废铁收购、运输及清场工作。"),
+  bodyLine("3.我方承诺本报价文件中的所有资料真实有效。"),
+  emptyLine(),
+  bodyLine("报价人：                    （盖单位章）", false),
+  bodyLine("法定代表人或其委托代理人：         （签字）", false),
+  bodyLine("地址：", false),
+  bodyLine("电话：", false),
+  bodyLine("         年          月          日", false),
+  emptyLine(),
+
+  // (二) 报价表
+  heading("（二）报价表"),
+  emptyLine(),
+  centerLine("印尼金川WP公司废铁销售报价表"),
+  emptyLine(),
+  bodyLine("序号  类别                      报价单价（Rp/吨）  备注", false),
+  bodyLine("1     冶炼厂改造废钢              _____________", false),
+  bodyLine("2     废旧钢结构                  _____________", false),
+  bodyLine("3     报废设备拆解废钢            _____________", false),
+  bodyLine("4     日常检修废旧钢材            _____________", false),
+  emptyLine(),
+  bodyLine("备注：以上报价均为含税价（含增值税）。", false),
+  bodyLine("报价有效期：自报价之日起30日历天。", false),
+  bodyLine("付款条件：先款后货，货款结清后放货。", false),
+  emptyLine(),
+
+  // 九、报价截止时间
+  heading("九、报价截止时间"),
+  bodyLine("1.提交截止时间：2026年7月15日。逾期提交的报价文件视为无效，不予受理。"),
+  bodyLine("2.提交方式：电子版文件同步发送至指定邮箱。"),
+  emptyLine(),
+
+  // 十、其他说明
+  heading("十、其他说明"),
+  bodyLine("1.甲方有权对各报价单位的资质、业绩、报价方案等内容进行综合评审，择优确定合作单位，且无需对未中标单位作出解释。"),
+  bodyLine("2.贵单位提交的所有报价资料均需真实有效，若存在虚假资质、虚假业绩、虚报报价等情况，一经查实，立即取消参选资格，列入甲方合作黑名单。"),
+  bodyLine("3.本询价文件仅为项目询价依据，不作为最终销售合同，最终合作条款以双方正式签订的销售合同为准。"),
+  bodyLine("4.贵单位收到本询价函后，无论是否参与报价，均请及时与我方对接反馈。"),
+  bodyLine("5.废铁交易、税务及财务核算应符合印尼有关法律法规。"),
+  emptyLine(),
+  emptyLine(),
+
+  // 联系人
+  bodyLine("联系人：刘彩霞"),
+  bodyLine("联系电话：13830587721"),
+  bodyLine("邮    箱：892350096@qq.com"),
+  emptyLine(),
+  emptyLine(),
+
+  // 落款
+  rightLine("发函单位：印尼金川WP公司"),
+  rightLine("发函日期：2026年7月1日"),
+];
+
+const doc = new Document({
+  styles: {
+    default: {
+      document: {
+        run: { font: FONT, size: 21 },
+      },
+    },
+  },
+  sections: [{
+    properties: {
+      page: {
+        size: { width: 11906, height: 16838 }, // A4
+        margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+      },
+    },
+    children,
+  }],
+});
+
+Packer.toBuffer(doc).then(buffer => {
+  fs.writeFileSync(OUT, buffer);
+  console.log("SUCCESS: Created " + OUT);
+  console.log("Size: " + buffer.length + " bytes");
+});

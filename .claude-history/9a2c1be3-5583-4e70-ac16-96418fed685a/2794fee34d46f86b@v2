@@ -1,0 +1,82 @@
+import os, sys, zipfile, tempfile, shutil
+sys.stdout.reconfigure(encoding='utf-8')
+
+path = r'D:\工作\装备能源\检修管理\2026年\年度大修\3#生产线\评审'
+fn = [f for f in os.listdir(path) if '2026.07.14' in f and '电炉' in f and f.endswith('.docx')][0]
+fp = os.path.join(path, fn)
+
+tmpdir = tempfile.mkdtemp()
+with zipfile.ZipFile(fp, 'r') as z:
+    z.extractall(tmpdir)
+
+docx_path = os.path.join(tmpdir, 'word', 'document.xml')
+with open(docx_path, 'r', encoding='utf-8') as f:
+    xml = f.read()
+
+# Fix 1: Replace the entire problematic w:t element text
+old_wt = '即PT GIOK EMAS TEKNIK（PT.GET）责任划分相对复杂，且PT.GET的JK3工业安全认证在申办中'
+new_wt = ''
+xml = xml.replace(old_wt, new_wt)
+
+# Also handle the alternate versions
+for old in [
+    '，但PT GIOK EMAS TEKNIK（PT.GET）责任划分相对复杂，且PT.GET的JK3工业安全认证在申办中，印尼金川建设有限公司报价238.80万元/台，略高于PT GIOK EMAS TEKNIK（PT.GET），且无电炉耐材施工业绩。',
+    '责任划分相对复杂，且PT.GET的JK3工业安全认证在申办中，印尼金川建设有限公司报价238.80万元/台，略高于PT GIOK EMAS TEKNIK（PT.GET），且无电炉耐材施工业绩',
+    '责任划分相对复杂，且PT.GET的JK3工业安全认证在申办中',
+    '但PT GIOK EMAS TEKNIK（PT.GET）责任划分相对复杂',
+    '但责任划分相对复杂，且PT.GET的JK3工业安全认证在申办中',
+]:
+    if old in xml:
+        xml = xml.replace(old, '')
+        print(f'  Fixed: "{old[:60]}..."')
+
+# Fix 2: Fix the English evaluation text
+old_en = 'Jiangsu Xinxin (dengan PT.GET) dan Jinhuan Construction Indonesia'
+new_en = 'PT GIOK EMAS TEKNIK（PT.GET）dan Jinhuan Construction Indonesia'
+xml = xml.replace(old_en, new_en)
+print('  Fixed English evaluation text')
+
+# Fix 3: Remove any duplicated/run-on text
+# The text now might have "2. PT GIOK EMAS TEKNIK（PT.GET）报价237.07万" followed by nothing useful
+# Let me check if there's a double "2."
+xml = xml.replace('.2. PT GIOK EMAS TEKNIK（PT.GET）报价237.07', '。2. 建议在合同签订前，明确要求PT GIOK EMAS TEKNIK（PT.GET）完善JK3工业安全认证')
+
+# Also fix any .2. pattern
+xml = xml.replace('2.2. 建议在合同签订前', '2. 建议在合同签订前')
+
+# Write back
+with open(docx_path, 'w', encoding='utf-8') as f:
+    f.write(xml)
+
+# Repack
+with zipfile.ZipFile(fp, 'w', zipfile.ZIP_DEFLATED) as zout:
+    for root, dirs, files in os.walk(tmpdir):
+        for file in files:
+            zout.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), tmpdir))
+
+shutil.rmtree(tmpdir)
+
+# Verify
+from docx import Document
+doc = Document(fp)
+txt = '\n'.join([p.text for p in doc.paragraphs if p.text.strip()])
+
+problems = ['责任划分', 'Jiangsu Xinxin', '即PT']
+for p in problems:
+    if p in txt:
+        print(f'  WARNING: "{p}" still present!')
+    else:
+        print(f'  OK: "{p}" removed')
+
+# Show recommendation section
+rec_found = False
+for p in doc.paragraphs:
+    if '推荐理由如下' in p.text:
+        rec_found = True
+    if rec_found:
+        if p.text.strip():
+            print(f'  REC: {p.text[:120]}')
+        if '提请审议' in p.text:
+            break
+
+print('\nDone!')

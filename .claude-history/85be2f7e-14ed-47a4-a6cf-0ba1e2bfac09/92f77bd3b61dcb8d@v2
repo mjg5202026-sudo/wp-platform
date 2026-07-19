@@ -1,0 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+故障率分析引擎包
+
+可复用的多时间维度故障率分析工具。
+支持周/月/季/半年/年报，可直接通过CLI使用或集成到Flask应用。
+
+用法:
+    python -m backend.analysis.cli --month 6 --year 2026
+    python -m backend.analysis.cli --start 2026-01-01 --end 2026-06-30
+"""

@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "sqlite-wp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lubo3395/mcp-sqlite-server",
+        "--db", "D:\\soft\\work-flow\\wp-platform\\data\\db\\wp_platform.db",
+        "--readonly",
+        "--max-rows", "500"
+      ],
+      "description": "WP平台SQLite数据库 - 只读查询"
+    }
+  },
+  "project_skills": {
+    "wp-start": {
+      "description": "启动WP平台（后端Flask + 前端Vite）",
+      "prompt": "启动WP装备能源AI经营管理平台的开发环境。\n\n1. 后端: 在 D:\\soft\\work-flow\\wp-platform 目录下执行 `python app.py`，监听端口 5000\n2. 前端: 在 D:\\soft\\work-flow\\wp-platform\\frontend 目录下执行 `npx vite --port 3000`\n3. 等待两个服务都启动后，确认:\n   - API健康检查: http://localhost:5000/api/health\n   - 前端页面: http://localhost:3000\n4. 如果启动失败，检查端口占用并提示用户"
+    },
+    "wp-db": {
+      "description": "查询WP平台数据库（SQLite）",
+      "prompt": "查询WP装备能源AI经营管理平台的SQLite数据库。\n\n数据库路径: D:\\soft\\work-flow\\wp-platform\\data\\db\\wp_platform.db\n表结构: assessment_kpi_results, energy_consumptions, fault_statistics, inspection_issues, operation_impact_factors, projects, material_consumptions, inventory_targets, performance_assessments, ai_review_records\n\n使用MCP SQLite工具 sqlite-wp 执行自然语言查询。支持:\n- 查看表结构和样本数据\n- 按条件筛选查询（日期范围、类型、部门等）\n- 统计汇总（总数、平均值、趋势等）\n- 用ECharts生成可视化图表\n\n注意: 只读模式，不能修改数据。如果需要后端操作请使用API。"
+    },
+    "wp-frontend": {
+      "description": "WP平台前端开发/设计辅助",
+      "prompt": "辅助WP装备能源AI经营管理平台的前端开发。\n\n技术栈: React 19 + Vite 6 + Ant Design 5 + ECharts 5 + Axios\n路径: D:\\soft\\work-flow\\wp-platform\\frontend\\src\n\n当前页面:\n- Dashboard.jsx — 领导驾驶舱（目前仅故障数据）\n- Faults.jsx — 故障统计（图表+表格+筛选+CSV导出）\n- Energy.jsx — 能源管理（CRUD+图表+上传）\n- Inspections.jsx — 专项检查（问题管理+整改跟踪）\n- Assessments.jsx — 绩效考核（KPI计算）\n- DataCenter.jsx — 数据中心（文件上传+数据预览）\n- Projects.jsx — 项目管理（Mock数据）\n- Reports.jsx — 报告中心（DOCX生成/下载）\n\nLayout: components/Layout.jsx (Ant Design Sider+Header+Content)\n样式: App.css (仅有基础布局样式)\n\n建议改进口头禅:\n- \"当前页面只用了App.css的通用样式\"\n- \"先看API接口返回什么再设计组件\"\n- \"用Ant Design组件保持一致\""
+    }
+  }
+}

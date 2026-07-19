@@ -1,0 +1,79 @@
+---
+name: failure-analysis-engine
+description: 装备能源部-作业率故障率分析引擎的算法规则、配置、文件和集成方案
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 0c4a2e7f-a88b-4b00-86bb-facd19731745
+---
+
+# 故障率分析引擎 (failure-analysis-engine)
+
+## 位置
+- 主代码: `D:\soft\work-flow\wp-platform\backend\analysis\`
+- 服务层: `D:\soft\work-flow\wp-platform\backend\services\failure_analysis_service.py`
+- API路由: `D:\soft\work-flow\wp-platform\backend\routes\fault_routes.py`（3个新端点）
+- 数据源: `D:\soft\work-flow\wp-platform\data\templates\影响作业率因素统计 2026(4).xls`
+- 测试脚本: `C:\Users\dell\.claude\projects\d--soft-python-vscode-Daily-plan\analyze_june.py`（已弃用）
+
+## 核心算法原则
+
+### 1. 排除项（不参与计算）
+- 生产组织、计划性检修、保障部（含保障部车辆、车辆不足）
+- 4#线（1#/2#/3#线运行，4#线技改中）
+
+### 2. 公辅系统处理
+- **立磨**（可扩展到空压机等）属于公辅系统，不是产线设备
+- 立磨故障时，取**电炉侧停机时间**作为各线的立磨影响
+- 配置在 `config.py` 的 `PUBLIC_UTILITY_FACTORS`
+
+### 3. 立磨窗口期检修归入立磨
+- 立磨故障导致生产线已停，在此期间组织的**计划性检修**（如2#/3#电炉修补）不造册额外停机
+- 归入立磨影响，标注"公辅(含检修)"
+- 关键词在 `PLANNED_REPAIR_KEYWORDS`
+
+### 4. 突发故障留在产线自身
+- 即使发生在立磨同一天，圆锥破堵死/跳停等突发故障仍算产线自身
+- 关键词在 `SUDDEN_FAULT_KEYWORDS`
+
+### 5. 去重叠计算
+- 按(日期, 线号, 因素描述)分组，取组内MAX（串联工艺，三个设备停机重叠）
+
+### 6. 综合故障率
+- **综合故障率** = (产线自身停机 + 立磨含同期检修) / (运行产线数 × 天数 × 24h)
+- 6月结果: 综合故障率 9.44%，产线自身 2.30%
+
+## 使用方式
+
+### CLI
+```bash
+cd D:\soft\work-flow\wp-platform
+python -m backend.analysis.cli --month 6 --year 2026
+```
+
+### API
+```
+GET /api/faults/analysis/monthly?year=2026&month=6
+GET /api/faults/analysis/custom?start=2026-06-01&end=2026-06-29
+GET /api/faults/analysis/quarterly?year=2026&quarter=2
+```
+
+## 配置位置
+所有可调参数集中在 `config.py`：
+- 排除原因 → `EXCLUDE_REASONS`
+- 公辅系统 → `PUBLIC_UTILITY_FACTORS`
+- 计划检修关键词 → `PLANNED_REPAIR_KEYWORDS`
+- 突发故障关键词 → `SUDDEN_FAULT_KEYWORDS`
+- 设备识别 → `EQUIPMENT_PATTERNS`
+- 产线识别 → `LINE_PATTERNS`
+
+## 数据格式
+Excel `.xls` 文件，单工作表，列索引：
+- 0: 时间 | 1: 班次 | 2: 班组 | 3: 系统（如1#电炉）
+- 4: 影响因素 | 5-6: 起止时间 | 7: 累计分钟
+- 8: 影响类型 | 9: 影响原因/单位
+
+## 将来集成
+- DB数据源已在 `loader.py` 中有 `DBLoader`，未来平台上线后传 `db.session` 即可
+- API格式与现有 `fault_routes.py` 一致（`{"data": {...}}`）
+- 可直接对接前端 ECharts + Ant Design Table

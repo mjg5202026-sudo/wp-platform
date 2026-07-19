@@ -1,0 +1,170 @@
+var fs = require("fs");
+var D = require("docx");
+var path = require("path");
+
+var f = "D:\\工作\\装备能源\\固定资产\\废铁销售\\废铁销售评审会议纪要（双语版）.docx";
+
+// Font constants
+var FTit = "方正小标宋简体";
+var FBody = "仿宋_GB2312";
+var FH1 = "黑体";
+var FEn = "Times New Roman";
+var FPage = "宋体";
+
+// Text helper
+function t(txt, o) {
+  o = o || {};
+  return new D.TextRun({ text: txt, font: o.f || FBody, size: o.s || 32, bold: o.b || false });
+}
+function P(ch, o) {
+  o = o || {};
+  var a = Array.isArray(ch) ? ch : [t(ch)];
+  var sp = { line: 560, lineRule: "exact" };
+  if (o.sp) Object.assign(sp, o.sp);
+  var po = { children: a, spacing: sp };
+  if (o.al) po.alignment = o.al;
+  if (o.ind) po.indent = o.ind;
+  return new D.Paragraph(po);
+}
+function E(n) {
+  n = n || 1; var a = [];
+  for (var i = 0; i < n; i++) a.push(P([t("", { s: 10 })]));
+  return a;
+}
+function TP(txt) {
+  return P([t(txt, { f: FTit, s: 44 })], { al: D.AlignmentType.CENTER, sp: { line: 660, lineRule: "exact", before: 200, after: 200 } });
+}
+function H1(txt) {
+  return P([t(txt, { f: FH1, s: 32, b: true })], { sp: { line: 560, lineRule: "exact", before: 200 }, kn: true });
+}
+function Z(txt) {
+  return P([t(txt)], { ind: { firstLine: 640 }, sp: { line: 560, lineRule: "exact", after: 20 } });
+}
+function I(txt) {
+  return P([t(txt, { f: FEn })], { ind: { firstLine: 640 }, sp: { line: 560, lineRule: "exact" } });
+}
+
+// Table helper
+var bd = { style: D.BorderStyle.SINGLE, size: 1, color: "000000" };
+var bds = { top: bd, bottom: bd, left: bd, right: bd };
+function TC(txt, o) {
+  o = o || {};
+  return new D.TableCell({
+    borders: bds,
+    width: o.w ? { size: o.w, type: D.WidthType.DXA } : undefined,
+    shading: o.sh ? { fill: o.sh, type: D.ShadingType.CLEAR } : undefined,
+    margins: { top: 40, bottom: 40, left: 80, right: 80 },
+    verticalAlign: "center",
+    children: [new D.Paragraph({ children: [t(txt, { b: o.b, s: o.s || 24 })], alignment: o.al || D.AlignmentType.CENTER, spacing: { after: 0, line: 400, lineRule: "exact" } })],
+  });
+}
+
+var cw = [600, 2600, 1800, 2000, 2400];
+var tw = cw.reduce(function(a,b){return a+b;},0);
+var hdr = new D.TableRow({ children: [
+  TC("序号", {w:cw[0],b:true,sh:"D5E8F0"}),
+  TC("报价单位", {w:cw[1],b:true,sh:"D5E8F0"}),
+  TC("报价（Rp/吨）", {w:cw[2],b:true,sh:"D5E8F0"}),
+  TC("资质情况", {w:cw[3],b:true,sh:"D5E8F0"}),
+  TC("备注", {w:cw[4],b:true,sh:"D5E8F0"}),
+]});
+var rd = [
+  ["1","PT Menembus Batas","Rp1.700.000","Lengkap（齐全）","含增值税，海运自理"],
+  ["2","PT Kafila Lintas Benua","Rp1.550.000","Lengkap（齐全）","含增值税，有合作历史"],
+  ["3","CV Besi Makmur","Rp1.500.000","Belum Lengkap（不完整）","含增值税，海运自理"],
+];
+var dr = rd.map(function(r){
+  return new D.TableRow({ children: r.map(function(v,i){
+    var al = (i===1||i===3||i===4) ? D.AlignmentType.LEFT : D.AlignmentType.CENTER;
+    return TC(v, {w:cw[i], al:al});
+  })});
+});
+var tbl = new D.Table({ width: {size:tw, type:D.WidthType.DXA}, columnWidths: cw, rows: [hdr].concat(dr) });
+
+// Content strings - Chinese
+var z1 = "2026年7月4日，印尼金川WP公司（以下简称“公司”）在OBI岛园区以视频方式召开公司总裁办公会议，会议由公司总裁_______________主持。公司副总裁_______________、_______________、_______________，财务总监_______________，总裁助理_______________参加了会议。公司董事长_______________，副董事长、副总裁_______________，副总裁_______________，公司监事长_______________，总裁助理_______________因公未出席。冶炼部、安全生产技术部、装备能源部、行政部、财务部负责人列席了会议。会议审议了《关于废铁销售项目的报告》的议题，纪要如下：";
+
+// Content strings - Indonesian
+var i1 = "Pada tanggal 4 Juli 2026, PT. WP Indonesia Jinchuan (selanjutnya disebut “Perusahaan”) menyelenggarakan Rapat Direksi Perusahaan melalui video conference di kawasan OBI Island. Rapat dipimpin oleh Presiden Direktur Perusahaan, Bapak/Ibu _______________. Wakil Presiden Direktur _______________, _______________, _______________, Direktur Keuangan _______________, Asisten Presiden Direktur _______________ hadir dalam rapat. Ketua Dewan Komisaris _______________, Wakil Ketua merangkap Wakil Presiden Direktur _______________, Wakil Presiden Direktur _______________, Ketua Dewan Pengawas _______________, dan Asisten Presiden Direktur _______________ berhalangan hadir karena dinas. Kepala Departemen Smelter, Departemen Teknik Keselamatan Produksi, Departemen Peralatan dan Energi, Departemen Administrasi, dan Departemen Keuangan hadir sebagai peserta. Rapat membahas agenda “Laporan Proyek Penjualan Besi Tua” dengan notulen sebagai berikut:";
+
+var zr1_1 = "截至报价截止时间，共收到3家单位提交的报价文件，报价汇总如下：";
+var ir1_1 = "Hingga batas akhir penawaran, terdapat 3 perusahaan yang menyerahkan dokumen penawaran:";
+var zr1_2 = "1. PT Menembus Batas：报价Rp1.700.000/吨，资质齐全，含增值税，海运自理。";
+var ir1_2 = "1. PT Menembus Batas: Harga Rp1.700.000/ton, kualifikasi lengkap, termasuk PPN.";
+var zr1_3 = "2. PT Kafila Lintas Benua：报价Rp1.550.000/吨，资质齐全，含增值税，2024年有合作历史。";
+var ir1_3 = "2. PT Kafila Lintas Benua: Harga Rp1.550.000/ton, kualifikasi lengkap, riwayat kerja sama 2024.";
+var zr1_4 = "3. CV Besi Makmur：报价Rp1.500.000/吨，资质尚不完整，含增值税。";
+var ir1_4 = "3. CV Besi Makmur: Harga Rp1.500.000/ton, kualifikasi belum lengkap, termasuk PPN.";
+
+var zr2_1 = "评审小组对3家报价单位的相关资料进行了审阅和讨论，主要情况如下：";
+var ir2_1 = "Tim evaluasi telah meninjau dan mendiskusikan dokumen ketiga perusahaan:";
+var zr2_2 = "1. PT Menembus Batas报价最高（Rp1.700.000/吨），资质齐全，愿意自行承担海运费用，对WP公司最为有利。";
+var ir2_2 = "1. PT Menembus Batas: Harga tertinggi, kualifikasi lengkap, bersedia menanggung biaya laut sendiri.";
+var zr2_3 = "2. PT Kafila Lintas Benua报价居中（Rp1.550.000/吨），资质齐全，合作经验良好。";
+var ir2_3 = "2. PT Kafila Lintas Benua: Harga menengah, kualifikasi lengkap, pengalaman baik.";
+var zr2_4 = "3. CV Besi Makmur报价最低（Rp1.500.000/吨），但资质材料尚不完整，暂不具备签约条件。";
+var ir2_4 = "3. CV Besi Makmur: Harga terendah, namun kualifikasi belum lengkap.";
+var zr2_5 = "经充分讨论，评审小组一致认为：PT Menembus Batas和PT Kafila Lintas Benua均具备完整资质，均符合询价文件要求。";
+var ir2_5 = "Setelah diskusi, tim evaluasi sepakat kedua perusahaan memenuhi persyaratan.";
+
+var zr3_1 = "经评审小组全体成员一致表决，形成决议如下：";
+var ir3_1 = "Setelah pemungutan suara, diambil keputusan sebagai berikut:";
+var zr3_2 = "在PT Menembus Batas和PT Kafila Lintas Benua均满足询价文件要求的前提下，一致同意在相同条件下与报价最高的PT Menembus Batas（Rp1.700.000/吨）签订废铁销售合同。";
+var ir3_2 = "Diputuskan secara bulat untuk menandatangani kontrak dengan PT Menembus Batas (Rp1.700.000/ton) dalam kondisi yang sama.";
+var zr3_3 = "如PT Menembus Batas因故无法签约，则与报价次高的PT Kafila Lintas Benua（Rp1.550.000/吨）签订合同。";
+var ir3_3 = "Apabila PT Menembus Batas tidak dapat menandatangani kontrak, maka dengan PT Kafila Lintas Benua (Rp1.550.000/ton).";
+var zr3_4 = "合同期限建议为6个月或1年，具体条款以正式签订的销售合同为准。";
+var ir3_4 = "Jangka waktu kontrak 6 bulan atau 1 tahun, sesuai kontrak resmi.";
+
+var ch = []
+  .concat(E(2)).concat([TP("废铁销售询价评审会议纪要")]).concat(E(2))
+  .concat([Z(z1)]).concat([I(i1)]).concat(E())
+
+  .concat([H1("一、报价情况汇报")])
+  .concat([Z(zr1_1)]).concat([I(ir1_1)]).concat(E())
+  .concat([P([t("Tabel Perbandingan Penawaran / 报价情况对比表")], { al: D.AlignmentType.CENTER, sp: { line: 560, lineRule: "exact", before: 60, after: 60 } })])
+  .concat([tbl]).concat(E())
+  .concat([Z(zr1_2)]).concat([I(ir1_2)])
+  .concat([Z(zr1_3)]).concat([I(ir1_3)])
+  .concat([Z(zr1_4)]).concat([I(ir1_4)]).concat(E())
+
+  .concat([H1("二、评审讨论")])
+  .concat([Z(zr2_1)]).concat([I(ir2_1)]).concat(E())
+  .concat([Z(zr2_2)]).concat([I(ir2_2)]).concat(E())
+  .concat([Z(zr2_3)]).concat([I(ir2_3)]).concat(E())
+  .concat([Z(zr2_4)]).concat([I(ir2_4)]).concat(E())
+  .concat([Z(zr2_5)]).concat([I(ir2_5)]).concat(E())
+
+  .concat([H1("三、评审决议")]).concat(E())
+  .concat([P([t(zr3_1)], { ind: { firstLine: 640 }, sp: { line: 560, lineRule: "exact", after: 40 } })])
+  .concat([P([t(ir3_1, {f:FEn})], { ind: { firstLine: 640 }, sp: { line: 560, lineRule: "exact" } })]).concat(E())
+  .concat([P([t(zr3_2)], { ind: { firstLine: 640 }, sp: { line: 560, lineRule: "exact", before: 60, after: 40 } })])
+  .concat([P([t(ir3_2, {f:FEn})], { ind: { firstLine: 640 }, sp: { line: 560, lineRule: "exact" } })]).concat(E())
+  .concat([Z(zr3_3)]).concat([I(ir3_3)]).concat(E())
+  .concat([Z(zr3_4)]).concat([I(ir3_4)]).concat(E(2))
+
+  .concat([P([t("评审小组组长（签字）：")], { sp: { line: 560, lineRule: "exact" } })])
+  .concat([P([t("Ketua Tim Evaluasi (ttd):")], { sp: { line: 560, lineRule: "exact" } })]).concat(E(2))
+  .concat([P([t("评审小组成员（签字）：")], { sp: { line: 560, lineRule: "exact" } })])
+  .concat([P([t("Anggota Tim Evaluasi (ttd):")], { sp: { line: 560, lineRule: "exact" } })]).concat(E(2))
+  .concat([P([t("2026年7月4日")], { al: D.AlignmentType.RIGHT, sp: { line: 560, lineRule: "exact" } })])
+  .concat([P([t("4 Juli 2026")], { al: D.AlignmentType.RIGHT, sp: { line: 560, lineRule: "exact" } })]);
+
+var doc = new D.Document({
+  styles: { default: { document: { run: { font: FBody, size: 32 } } } },
+  sections: [{
+    properties: { page: { margin: { top: 2098, bottom: 1984, left: 1587, right: 1474 }, size: { width: 11906, height: 16838 } } },
+    footers: {
+      default: new D.Footer({ children: [new D.Paragraph({
+        children: [new D.TextRun({ text: "- ", font: FPage, size: 28 }), new D.TextRun({ children: [D.PageNumber.CURRENT], font: FPage, size: 28 }), new D.TextRun({ text: " -", font: FPage, size: 28 })],
+        alignment: D.AlignmentType.CENTER, spacing: { after: 0 },
+      })] }),
+    },
+    children: ch,
+  }],
+});
+
+D.Packer.toBuffer(doc).then(function(b) {
+  fs.writeFileSync(f, b);
+  console.log("OK " + b.length + "b");
+});

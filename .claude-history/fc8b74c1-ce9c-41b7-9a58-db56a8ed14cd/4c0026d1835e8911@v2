@@ -1,0 +1,19 @@
+# -*- coding: utf-8 -*-
+"""逐月检查数据，找出异常月份"""
+import subprocess, sys, json
+
+for m in range(1, 7):
+    r = subprocess.run(
+        [sys.executable, '-m', 'backend.analysis.cli', '--month', str(m), '--year', '2026',
+         '--output', 'json', '--file', r'D:\工作\装备能源\经营分析\2026年\影响作业率因素统计 2026.xls'],
+        capture_output=True, text=True, timeout=120)
+    try:
+        d = json.loads(r.stdout)
+        s = d['summary']
+        rel = d['reliability']
+        print(f'{m}月: 综合故障率={s["avg_comprehensive_rate"]}%% 自身={s["avg_own_rate"]}%% 停机={s["total_minutes"]}min 故障次数={rel["total_fault_count"]} 计划维修占比={rel["planned_maintenance_ratio"]}%%')
+        for lr in d['line_results']:
+            print(f'  {lr["line"]}#线: 自身={lr["own_minutes"]}min({lr["own_hours"]}h) MTBF={lr["mtbf_hours"]}h')
+    except Exception as e:
+        print(f'{m}月: ERROR - {e}')
+        print(f'stderr: {r.stderr[:500]}')

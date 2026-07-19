@@ -1,0 +1,20 @@
+# -*- coding: utf-8 -*-
+"""Detailed PDF analysis."""
+from pdfminer.pdfparser import PDFParser
+from pdfminer.pdfdocument import PDFDocument
+from pdfminer.pdfpage import PDFPage
+
+f = r'D:\工作\装备能源\固定资产\废铁销售\CV MENEMBUS BATAS-PENAWARAN(1).pdf'
+with open(f, 'rb') as fh:
+    parser = PDFParser(fh)
+    doc = PDFDocument(parser)
+    print("Pages:", sum(1 for _ in PDFPage.create_pages(doc)))
+
+    # Get metadata
+    if doc.info:
+        for info in doc.info:
+            for k, v in info.items():
+                if hasattr(v, 'decode'):
+                    print(f"{k}: {v.decode('utf-8', errors='replace')}")
+                else:
+                    print(f"{k}: {v}")

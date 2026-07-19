@@ -1,0 +1,31 @@
+# -*- coding: utf-8 -*-
+"""对比新旧Excel文件的2月分析结果"""
+import subprocess, sys, json
+
+r_old = subprocess.run(
+    [sys.executable, '-m', 'backend.analysis.cli', '--month', '2', '--year', '2026', '--output', 'json'],
+    capture_output=True, text=True, timeout=120)
+r_new = subprocess.run(
+    [sys.executable, '-m', 'backend.analysis.cli', '--month', '2', '--year', '2026', '--output', 'json',
+     '--file', r'D:\工作\装备能源\经营分析\2026年\影响作业率因素统计 2026.xls'],
+    capture_output=True, text=True, timeout=120)
+
+d_old = json.loads(r_old.stdout) if r_old.stdout.strip() else None
+d_new = json.loads(r_new.stdout) if r_new.stdout.strip() else None
+
+if d_old:
+    s = d_old['summary']
+    r = d_old['reliability']
+    print('OLD file (data/templates/):')
+    print(f'  综合故障率={s["avg_comprehensive_rate"]}%% 自身={s["avg_own_rate"]}%% 停机={s["total_minutes"]}min 计划维修={r["planned_maintenance_ratio"]}%%')
+    for lr in d_old['line_results']:
+        print(f'  {lr["line"]}#线: 自身={lr["own_minutes"]}min 立磨={lr["limo_minutes"]}min 检俌={lr["planned_minutes"]}min')
+
+if d_new:
+    s = d_new['summary']
+    r = d_new['reliability']
+    print()
+    print('NEW file (D:\\工作\\装备能源\\经营分析\\2026年\\):')
+    print(f'  综合故障率={s["avg_comprehensive_rate"]}%% 自身={s["avg_own_rate"]}%% 停机={s["total_minutes"]}min 计划维修={r["planned_maintenance_ratio"]}%%')
+    for lr in d_new['line_results']:
+        print(f'  {lr["line"]}#线: 自身={lr["own_minutes"]}min 立磨={lr["limo_minutes"]}min 检俌={lr["planned_minutes"]}min')

@@ -1,0 +1,231 @@
+import React, { useState, useEffect, useCallback } from 'react'
+import {
+  Card, Table, Row, Col, Tag, Spin, DatePicker, Select, Space,
+  Button, InputNumber, message
+} from 'antd'
+import { DownloadOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
+import ReactECharts from 'echarts-for-react'
+import dayjs from 'dayjs'
+import { getFaultSummary, getFaultTop10, getFaultBySystem, getFaultTrend, getImpactFactors } from '../api'
+
+const { RangePicker } = DatePicker
+
+const Faults = () => {
+  const [loading, setLoading] = useState(true)
+  const [summary, setSummary] = useState(null)
+  const [top10, setTop10] = useState([])
+  const [bySystem, setBySystem] = useState([])
+  const [trend, setTrend] = useState([])
+  const [list, setList] = useState([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+
+  // Filters
+  const [dateRange, setDateRange] = useState([null, null])
+  const [filterSystem, setFilterSystem] = useState(null)
+  const [filterTeam, setFilterTeam] = useState(null)
+  const [filterType, setFilterType] = useState(null)
+
+  const buildParams = useCallback(() => {
+    const params = { page, per_page: 50 }
+    if (dateRange[0]) params.date_from = dateRange[0].format('YYYY-MM-DD')
+    if (dateRange[1]) params.date_to = dateRange[1].format('YYYY-MM-DD')
+    if (filterSystem) params.system = filterSystem
+    if (filterTeam) params.team = filterTeam
+    if (filterType) params.impact_type = filterType
+    return params
+  }, [page, dateRange, filterSystem, filterTeam, filterType])
+
+  const loadAll = useCallback(() => {
+    setLoading(true)
+    const params = buildParams()
+    // For summary/charts, use date filter only
+    const chartOpts = {}
+    if (dateRange[0]) chartOpts.date_from = dateRange[0].format('YYYY-MM-DD')
+    if (dateRange[1]) chartOpts.date_to = dateRange[1].format('YYYY-MM-DD')
+
+    Promise.all([
+      getFaultSummary(),
+      getFaultTop10(chartOpts),
+      getFaultBySystem(),
+      getFaultTrend({ days: 60 }),
+      getImpactFactors(params),
+    ]).then(([s, t, sys, tr, l]) => {
+      setSummary(s.data.data)
+      setTop10(t.data.data)
+      setBySystem(sys.data.data)
+      setTrend(tr.data.data)
+      setList(l.data.data)
+      setTotal(l.data.total || 0)
+    }).finally(() => setLoading(false))
+  }, [buildParams, dateRange])
+
+  useEffect(() => { loadAll() }, [loadAll])
+
+  const handleExportCSV = () => {
+    if (list.length === 0) { message.warning('暂无数据'); return }
+      const headers = ['日期','班次','班组','系统','影响因素','影响时间(分钟)','影响性质','原因分析']
+    const rows = list.map(r => [
+      r.date, r.shift, r.team, r.system, r.impact_factor,
+      r.impact_minutes, r.impact_type, r.cause_analysis || ''
+    ])
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v || ''}"`).join(','))].join('\n')
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `故障数据_${dayjs().format('YYYYMMDD')}.csv`
+    link.click()
+    URL.revokeObjectURL(link.href)
+    message.success('导出成功')
+  }
+
+  if (loading && !list.length) return <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>
+
+  const top10Option = {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 140, right: 40, top: 20, bottom: 20 },
+    xAxis: { type: 'value', name: '影响时间(分钟)' },
+    yAxis: {
+      type: 'category',
+      data: [...top10].reverse().map(t => t.factor.length > 18 ? t.factor.slice(0, 18) + '...' : t.factor),
+      axisLabel: { fontSize: 11 },
+    },
+    series: [{
+      type: 'bar',
+      data: [...top10].reverse().map(t => t.total_minutes),
+      itemStyle: { color: '#1677ff', borderRadius: [0, 4, 4, 0] },
+      label: { show: true, position: 'right', formatter: p => p.value + 'min', fontSize: 11 },
+    }],
+  }
+
+  const systemOption = {
+    tooltip: { trigger: 'item', formatter: '{b}: {c}'' ({d}%)' },
+    series: [{
+      type: 'pie', radius: ['30%', '60%'],
+      data: bySystem.map(s => ({ name: s.system, value: s.total_minutes })),
+      label: { formatter: '{b}\n{d}%', fontSize: 11 },
+      itemStyle: { borderRadius: 4 },
+    }],
+  }
+
+  const trendOption = {
+    tooltip: { trigger: 'axis' },
+    grid: { left: 40, right: 20, top: 30, bottom: 30 },
+    xAxis: { type: 'category', data: trend.map(t => t.date?.slice(5) || ''), axisLabel: { fontSize: 10, interval: 5 } },
+    yAxis: [
+    { type: 'value', name: '故障次数', splitLine: { lineStyle: { type: 'dashed' } } },
+    { type: 'value', name: '时间', splitLine: { show: false } },
+    ],
+    series: [
+    { type: 'bar', name: '影响时间(分钟)', data: trend.map(t => t.total_minutes), itemStyle: { color: '#1677ff' } },
+    { type: 'line', name: '故障次数', data: trend.map(t => t.count), yAxisIndex: 1, smooth: true, itemStyle: { color: '#ff4d4f' } },
+    ],
+    legend: { data: ['影响时间(分钟)', '故障次数'], top: 0, icon: 'roundRect' },
+  }
+
+  const columns = [
+    { title: '日期', dataIndex: 'date', width: 90, sorter: (a, b) => a.date?.localeCompare(b.date) },
+    { title: '班次', dataIndex: 'shift', width: 90, filters: [...new Set(list.map(r => r.shift))], onFilter: (v, r) => r.shift === v },
+    { title: '班组', dataIndex: 'team', width: 60 },
+    { title: '系统', dataIndex: 'system', width: 80, filters: [...new Set(list.map(r => r.system))], onFilter: (v, r) => r.system === v },
+    { title: '影响因素', dataIndex: 'impact_factor', ellipsis: true },
+    {
+      title: '影响时间(分钟)', dataIndex: 'impact_minutes', width: 90, sorter: (a, b) => a.impact_minutes - b.impact_minutes, render: v => (
+      render: v => <Tag color={v > 480 ? 'red' : v > 120 ? 'orange' : v > 60 ? 'blue' : 'default'}>{v}?</Tag>,
+    },
+    { title: '影响性质', dataIndex: 'impact_type', width: 60 },
+    { title: '原因分析', dataIndex: 'cause_analysis', ellipsis: true, width: 120 },
+  ]
+
+  return (
+    <div className="page-container">
+      <div className="page-header">
+            <h2>故障统计</h2>
+            <p>检索条件可筛选日期、班次、班组、系统和影响性质</p>
+      </div>
+
+      {/* Filter Bar */}
+      <Card style={{ marginBottom: 16 }}>
+        <Row gutter={[12, 12]} align="middle">
+          <Col><RangePicker value={dateRange} onChange={v => setDateRange(v || [null, null])} allowClear /></Col>
+          <Col>
+            <Select placeholder="''" allowClear style={{ width: 120 }} value={filterSystem} onChange={setFilterSystem}>
+              {[...new Set(bySystem.map(s => s.system))].map(s => <Select.Option key={s} value={s}>{s}</Select.Option>)}
+            </Select>
+          </Col>
+          <Col>
+              <Select placeholder='选择系统' allowClear style={{ width: 120 }} value={filterType} onChange={setFilterType}
+              <Select.Option value="''">''</Select.Option>
+              <Select.Option value="''">''</Select.Option>
+            </Select>
+          </Col>
+          <Col>
+            <Space>
+              <Button type="primary" icon={<SearchOutlined />} onClick={() => { setPage(1); loadAll() }}>''</Button>
+              <Button icon={<ReloadOutlined />} onClick={() => { setDateRange([null, null]); setFilterSystem(null); setFilterTeam(null); setFilterType(null); setPage(1) }}>''</Button>
+              <Button icon={<DownloadOutlined />} onClick={handleExportCSV}>''CSV</Button>
+            </Space>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* Summary */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        {[
+          { label: '故障总数', value: summary?.total_records || 0 },
+          { label: '故障时间(小时)', value: (summary?.total_hours || 0).toFixed(1) },
+          { label: '平均(分钟)', value: (summary?.avg_minutes_per_record || 0).toFixed(1) },
+          { label: '故障率', value: summary ? ((Object.values(summary.by_type || {})[0] || 0) / (summary.total_records || 1) * 100).toFixed(1) + '%' : '0%' },
+        ].map((s, i) => (
+          <Col xs={12} sm={6} key={i}>
+            <Card className="stat-card" bodyStyle={{ padding: '16px 12px' }}>
+              <div className="stat-label">{s.label}</div>
+              <div className="stat-value" style={{ color: '#1677ff', fontSize: 24 }}>{s.value}</div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      {/* Charts */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={8}>
+          <Card title="TOP10影响因素" bodyStyle={{ padding: 12 }}>
+            <ReactECharts option={top10Option} style={{ height: 360 }} />
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card title="系统分布" bodyStyle={{ padding: 12 }}>
+            <ReactECharts option={systemOption} style={{ height: 360 }} />
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card title="60''?" bodyStyle={{ padding: 12 }}>
+            <ReactECharts option={trendOption} style={{ height: 360 }} />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Data Table */}
+          <Card title="故障趋势(近60天)" style={{ marginTop: 16 }}>
+        <Table
+          dataSource={list}
+          columns={columns}
+          rowKey="id"
+          size="small"
+          loading={loading}
+          pagination={{
+            current: page,
+            total,
+            pageSize: 50,
+            showSizeChanger: false,
+            showTotal: t => `? ${t} ?`,
+            onChange: p => setPage(p),
+          }}
+          scroll={{ x: 750 }}
+        />
+      </Card>
+    </div>
+  )
+}
+
+export default Faults

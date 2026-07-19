@@ -1,0 +1,90 @@
+# -*- coding: utf-8 -*-
+"""从事故反馈表生成考核报告条目 - 完整版"""
+import openpyxl, re
+from datetime import datetime
+
+def gen_accident_entry(filepath):
+    """读取事故反馈表，生成考核报告条目"""
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    ws = wb.active
+    wb.close()
+
+    unit = str(ws.cell(4, 1).value or "").strip()
+    equip = str(ws.cell(4, 2).value or "").strip()
+    eq_class = str(ws.cell(4, 3).value or "B").strip()
+    impact_str = str(ws.cell(4, 5).value or "0").strip()
+    date_val = ws.cell(4, 6).value
+
+    # 事故描述可能是多行文本，取简洁版
+    desc_raw = str(ws.cell(5, 2).value or "").strip()
+    # 取简短的描述（第一行，去掉多余空格）
+    desc_short = desc_raw.split('\n')[0].strip() if desc_raw else "设备故障"
+
+    # 提取影响时间(分钟)
+    nums = re.findall(r'\d+\.?\d*', impact_str)
+    impact_mins = float(nums[0]) if nums else 0
+    impact_hours = impact_mins / 60
+
+    # 提取日期
+    if isinstance(date_val, datetime):
+        dt = date_val
+    elif isinstance(date_val, str):
+        try:
+            dt = datetime.strptime(date_val[:10], "%Y-%m-%d")
+        except:
+            dt = datetime.now()
+    else:
+        dt = datetime.now()
+
+    month = dt.month
+    day = dt.day
+
+    # 设备类别与处罚
+    base_map = {"A": 150, "B": 100, "C": 50}
+    base = base_map.get(eq_class, 100)
+
+    # 电炉相关或影响主系统的，按A类算
+    if '电炉' in equip or '电炉' in desc_short:
+        base = 150
+
+    # 超10h/20h/30h 加倍
+    if impact_hours > 30:
+        mult = 4
+    elif impact_hours > 20:
+        mult = 3
+    elif impact_hours > 10:
+        mult = 2
+    else:
+        mult = 1
+
+    penalty = int(base * mult)
+
+    # 生成考核条目文本 - 模仿人工撰写风格
+    # 电炉相关 -> 明确写电炉编号
+    furnace_match = re.search(r'(\d)#?号?电[炉窑]', desc_short)
+    furnace_id = furnace_match.group(0) if furnace_match else ""
+
+    # 事故原因简述
+    if '跳闸' in desc_short or '停电' in desc_short:
+        reason = f"{desc_short}"
+    elif '故障' in desc_short:
+        reason = f"{desc_short}"
+    else:
+        reason = f"{desc_short}"
+
+    # 影响描述
+    if furnace_id:
+        impact_desc = f"导致{furnace_id}停产{int(impact_mins)}分钟"
+    elif '电炉' in equip or '电炉' in desc_short:
+        impact_desc = f"导致电炉系统停产{int(impact_mins)}分钟"
+    elif impact_mins >= 30:
+        impact_desc = f"影响系统生产{int(impact_mins)}分钟"
+    else:
+        impact_desc = f"影响生产{int(impact_mins)}分钟"
+
+    text = f"{month}月{day}日，{unit}{reason}，{impact_desc}。依据《印尼金川WP公司2026年绩效管理业绩考核指标细则》设备设施管理第{article}条，考核{unit}{penalty}美元。"
+
+# 测试
+path = 'D:\\soft\\work-flow\\wp-platform\\data\\templates\\5月份\\印尼金川WP公司冶炼部事故落实反馈表(二区电炉低压配电室干式变压器保护动作分闸引起3#电炉停产事故).xlsx'
+result = gen_accident_entry(path)
+print(result)
